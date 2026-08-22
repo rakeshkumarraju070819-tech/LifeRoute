@@ -102,7 +102,9 @@ app.post('/api/tomtom/config', (request, response) => {
 
 app.get('/api/tomtom/search', async (request, response, next) => {
   try {
-    const result = await proxyTomTom('/search/2/search', request.query);
+    const query = typeof request.query.query === 'string' ? request.query.query.trim() : '';
+    if (!query) return response.status(400).json({ error: 'Search query is required.' });
+    const result = await proxyTomTom(`/search/2/search/${encodeURIComponent(query)}.json`, request.query);
     response.status(result.status).type(result.contentType).send(result.payload);
   } catch (error) {
     next(error);
@@ -111,7 +113,10 @@ app.get('/api/tomtom/search', async (request, response, next) => {
 
 app.get('/api/tomtom/route', async (request, response, next) => {
   try {
-    const result = await proxyTomTom('/routing/1/calculateRoute', request.query);
+    const locations = typeof request.query.locations === 'string' ? request.query.locations.trim() : '';
+    if (!locations) return response.status(400).json({ error: 'Route locations are required.' });
+    const { locations: _locations, ...routeQuery } = request.query;
+    const result = await proxyTomTom(`/routing/1/calculateRoute/${encodeURIComponent(locations)}/json`, routeQuery);
     response.status(result.status).type(result.contentType).send(result.payload);
   } catch (error) {
     next(error);

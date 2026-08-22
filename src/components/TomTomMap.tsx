@@ -84,32 +84,38 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<InstanceType<typeof TTMap> | null>(null);
   const [filters, setFilters] = useState({ ambulances: true, emergencies: true, hospitals: true, traffic: true });
-  const [status, setStatus] = useState<'loading' | 'ready' | 'missing-key'>('loading');
+    const [status, setStatus] = useState<'loading' | 'ready' | 'missing-key' | 'error'>('loading');
+    const [errorMessage, setErrorMessage] = useState('');
   const toggle = (k: keyof typeof filters) => setFilters(f => ({ ...f, [k]: !f[k] }));
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
     let cancelled = false;
 
     const initializeMap = async () => {
       const response = await fetch('/api/tomtom/config');
       if (!response.ok) throw new Error('TomTom configuration unavailable');
       const config = (await response.json()) as { apiKey?: string };
-      if (!config.apiKey || cancelled) {
+      if (cancelled) return;
+      if (!config.apiKey) {
         setStatus('missing-key');
         return;
       }
 
+      if (cancelled) return;
+
       TomTomConfig.instance.put({ apiKey: config.apiKey });
 
       const map = new TTMap({
-        mapLibre: { container: containerRef.current!, center: CENTER, zoom: 13 },
+        mapLibre: { container, center: CENTER, zoom: 13 },
       });
       mapRef.current = map;
 
-      map.mapLibreMap.on('load', () => {
+      const handleMapLoad = () => {
         if (cancelled) return;
         const gl = map.mapLibreMap;
+        if (gl.getSource('hospitals')) return;
 
       // Recommended route (crew view only)
       if (variant === 'crew') {
@@ -171,11 +177,27 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
       });
 
         setStatus('ready');
+      };
+      map.mapLibreMap.on('load', handleMapLoad);
+      map.mapLibreMap.on('styledata', handleMapLoad);
+      if (map.mapLibreMap.loaded()) handleMapLoad();
+      map.mapLibreMap.on('error', event => {
+        const message = event.error?.message || 'TomTom map resources failed to load.';
+        console.error('TomTom map error:', message);
+        if (!cancelled) {
+          setErrorMessage(message);
+          setStatus('error');
+        }
       });
     };
 
-    initializeMap().catch(() => {
-      if (!cancelled) setStatus('missing-key');
+    initializeMap().catch(error => {
+      if (!cancelled) {
+        const message = error instanceof Error ? error.message : 'TomTom map initialization failed.';
+        console.error('TomTom initialization error:', message);
+        setErrorMessage(message);
+        setStatus('error');
+      }
     });
 
     return () => {
@@ -227,9 +249,18 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
     );
   }
 
+  if (status === 'error') {
+    return (
+      <div className="relative bg-[#1a2035] rounded-lg overflow-hidden border border-red-500/30 flex flex-col items-center justify-center text-center p-6" style={{ height: heightStyle }}>
+        <p className="text-red-400 text-sm font-semibold mb-2">TomTom map failed to load</p>
+        <p className="text-slate-400 text-xs max-w-sm">{errorMessage || 'Check the API key permissions and browser network access.'}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="relative rounded-lg overflow-hidden border border-slate-700" style={{ height: heightStyle }}>
-      <div ref={containerRef} className="absolute inset-0 w-full h-full" />
+      <div id={`tomtom-map-${variant}`} ref={containerRef} className="absolute inset-0 w-full h-full" />
 
       {status === 'loading' && (
         <div className="absolute inset-0 flex items-center justify-center bg-[#1a2035] z-20">
