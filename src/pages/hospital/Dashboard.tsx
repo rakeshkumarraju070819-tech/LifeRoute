@@ -76,14 +76,14 @@ export default function HospitalDashboard() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
         <KPICard label="General Beds Available" value={`${capacity['General Beds'].avail}/${capacity['General Beds'].total}`} accent="available" icon="🛏" />
         <KPICard label="ICU Beds Available" value={`${capacity['ICU Beds'].avail}/${capacity['ICU Beds'].total}`} accent="available" icon="🏥" />
         <KPICard label="Incoming Ambulances" value={INCOMING.length} accent="warning" icon="🚑" />
         <KPICard label="Critical Incoming" value={INCOMING.filter(i => i.severity === 'CRITICAL').length} accent="emergency" icon="⚡" />
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Capacity Management */}
         <div ref={capacityRef} className="bg-[#12183d] border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 scroll-mt-6">
           <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold mb-4">Capacity Management</p>
@@ -182,7 +182,7 @@ export default function HospitalDashboard() {
       </div>
 
       {/* Incoming ambulances table */}
-      <div className="bg-[#12183d] border border-[rgba(255,255,255,0.08)] rounded-2xl overflow-hidden">
+      <div className="bg-[#12183d] border border-[rgba(255,255,255,0.08)] rounded-2xl overflow-x-auto">
         <div className="px-6 py-4 border-b border-white/5">
           <p className="font-bold text-white">Ambulance Arrival Log</p>
         </div>

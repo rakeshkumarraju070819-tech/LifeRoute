@@ -53,6 +53,7 @@ export default function ForgotPassword() {
             <p className="text-slate-400 text-sm mb-6">
               Check <span className="text-blue-400">{email}</span> for instructions to reset your password.
             </p>
+            <Link to="/reset-password" className="block text-center bg-blue-500 hover:bg-blue-600 text-white rounded-lg py-3 font-semibold transition-colors mb-4">Continue to Reset Password</Link>
             <Link to="/login" className="text-blue-400 hover:text-blue-300 text-sm transition-colors">← Back to Sign In</Link>
           </div>
         )}

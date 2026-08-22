@@ -8,13 +8,22 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, updateProfile } = useAuth();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user?.name ?? '');
   const [phone, setPhone] = useState(user?.phone ?? '');
   const [saved, setSaved] = useState(false);
 
-  const save = () => { setEditing(false); setSaved(true); setTimeout(() => setSaved(false), 2500); };
+  const save = async () => {
+    try {
+      await updateProfile({ name, phone });
+    } catch {
+      return;
+    }
+    setEditing(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-8">
