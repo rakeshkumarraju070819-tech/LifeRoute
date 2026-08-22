@@ -3,20 +3,20 @@ import { useLocation } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
 import StatusBadge from '../../components/StatusBadge';
 import KPICard from '../../components/KPICard';
+<<<<<<< HEAD
+import { useSharedDataSync } from '../../hooks/useSharedDataSync';
+import { hospitalService } from '../../services/hospitalService';
+import { emergencyService } from '../../services/emergencyService';
+=======
 import { apiRequest } from '../../services/api';
 
 const INCOMING = [
   { ambulance: 'AMB-042', emergency: 'EM-2024-0847', type: 'Cardiac Arrest', severity: 'CRITICAL', eta: '4 min', location: 'Oak St', route: 'ON ROUTE', arrival: 'EXPECTED' },
   { ambulance: 'AMB-085', emergency: 'EM-2024-0848', type: 'Traffic Accident', severity: 'HIGH', eta: '9 min', location: 'River Rd', route: 'ON ROUTE', arrival: 'EXPECTED' },
 ];
+>>>>>>> 3e38dae9f7e02b4024bcd1d970a07e7cf9f2ba74
 
 type CapacityStatus = 'AVAILABLE' | 'LIMITED' | 'FULL';
-
-interface CapacityDept {
-  avail: number;
-  total: number;
-  status: CapacityStatus;
-}
 
 export default function HospitalDashboard() {
   const { user } = useAuth();
@@ -24,14 +24,23 @@ export default function HospitalDashboard() {
   const capacityRef = useRef<HTMLDivElement>(null);
   const incomingRef = useRef<HTMLDivElement>(null);
   const readinessRef = useRef<HTMLDivElement>(null);
-  const [hospitalStatus, setHospitalStatus] = useState<string>('OPEN');
-  const [capacity, setCapacity] = useState<Record<string, CapacityDept>>({
-    'General Beds': { avail: 45, total: 80, status: 'AVAILABLE' },
-    'ICU Beds': { avail: 8, total: 20, status: 'AVAILABLE' },
-    'Emergency Dept': { avail: 6, total: 12, status: 'AVAILABLE' },
-    'Trauma Unit': { avail: 2, total: 4, status: 'LIMITED' },
-    'Cardiac Unit': { avail: 3, total: 6, status: 'AVAILABLE' },
-  });
+
+  const { hospitals, emergencies } = useSharedDataSync();
+
+  useEffect(() => {
+    console.log('[SYNC] Hospital updated');
+  }, [hospitals, emergencies]);
+
+  // Assuming logged-in user belongs to City General Hospital for demo
+  const myHospitalId = 'HOSP-001'; 
+  const myHospital = hospitals.find(h => h.hospitalId === myHospitalId);
+
+  const [hospitalStatus, setHospitalStatus] = useState<string>(myHospital?.emergencyDepartmentStatus || 'AVAILABLE');
+
+  const incomingEmergencies = emergencies.filter(e => 
+    e.recommendedHospitalId === myHospitalId && 
+    e.status === 'EN ROUTE TO HOSPITAL'
+  );
 
   useEffect(() => {
     apiRequest<{ operationalStatus: string; departments: Record<string, CapacityDept> }>('/api/hospital/capacity')
@@ -40,6 +49,20 @@ export default function HospitalDashboard() {
   }, []);
 
   const updateAvail = (dept: string, delta: number) => {
+<<<<<<< HEAD
+    if (!myHospital) return;
+
+    if (dept === 'General Beds') {
+      const next = Math.max(0, Math.min(myHospital.totalBeds, myHospital.availableBeds + delta));
+      hospitalService.updateHospitalCapacity(myHospitalId, { availableBeds: next });
+    } else if (dept === 'ICU Beds') {
+      const next = Math.max(0, Math.min(myHospital.icuTotal, myHospital.icuAvailable + delta));
+      hospitalService.updateHospitalCapacity(myHospitalId, { icuAvailable: next });
+    } else if (dept === 'Emergency Dept') {
+      const next = Math.max(0, Math.min(30, myHospital.emergencyBedsAvailable + delta)); // Mock total to 30
+      hospitalService.updateHospitalCapacity(myHospitalId, { emergencyBedsAvailable: next });
+    }
+=======
     setCapacity(c => {
       const d = c[dept];
       const next = Math.max(0, Math.min(d.total, d.avail + delta));
@@ -49,14 +72,17 @@ export default function HospitalDashboard() {
       apiRequest('/api/hospital/capacity', { method: 'PATCH', body: JSON.stringify({ operationalStatus: hospitalStatus, departments: updated }) }).catch(() => undefined);
       return updated;
     });
+>>>>>>> 3e38dae9f7e02b4024bcd1d970a07e7cf9f2ba74
   };
 
-  const STATUS_OPTS = ['OPEN', 'LIMITED', 'FULL', 'EMERGENCY ONLY', 'CLOSED'];
+  const handleHospitalStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value as any;
+    setHospitalStatus(val);
+    hospitalService.updateHospitalCapacity(myHospitalId, { emergencyDepartmentStatus: val });
+  };
 
-  // '/hospital', '/hospital/capacity', '/hospital/incoming' and
-  // '/hospital/readiness' all render this same dashboard. Scroll to the
-  // relevant section when a sidebar link is used so navigation is visibly
-  // doing something.
+  const STATUS_OPTS = ['AVAILABLE', 'BUSY', 'LIMITED', 'FULL'];
+
   useEffect(() => {
     if (location.pathname.endsWith('/capacity')) {
       capacityRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -67,22 +93,50 @@ export default function HospitalDashboard() {
     }
   }, [location.pathname]);
 
+  if (!myHospital) return <div className="p-6 text-white text-center">Loading hospital data...</div>;
+
+  const generalPct = myHospital.availableBeds / myHospital.totalBeds;
+  const icuPct = myHospital.icuAvailable / myHospital.icuTotal;
+  const emergencyPct = myHospital.emergencyBedsAvailable / (myHospital.emergencyBeds || 30);
+
+  const getStatus = (pct: number): CapacityStatus => pct === 0 ? 'FULL' : pct < 0.3 ? 'LIMITED' : 'AVAILABLE';
+
+  const capacity = {
+    'General Beds': { avail: myHospital.availableBeds, total: myHospital.totalBeds, status: getStatus(generalPct), pct: generalPct },
+    'ICU Beds': { avail: myHospital.icuAvailable, total: myHospital.icuTotal, status: getStatus(icuPct), pct: icuPct },
+    'Emergency Dept': { avail: myHospital.emergencyBedsAvailable, total: myHospital.emergencyBeds || 30, status: getStatus(emergencyPct), pct: emergencyPct },
+    'Trauma Unit': { avail: myHospital.emergencyBedsAvailable > 0 ? 2 : 0, total: 4, status: getStatus(myHospital.emergencyBedsAvailable > 0 ? 0.5 : 0), pct: 0.5 },
+    'Cardiac Unit': { avail: myHospital.icuAvailable > 0 ? 3 : 0, total: 6, status: getStatus(myHospital.icuAvailable > 0 ? 0.5 : 0), pct: 0.5 },
+  };
+
+  const handleAccept = (em: any) => {
+    hospitalService.acceptIncomingEmergency(myHospitalId, em.emergencyId);
+  };
+
+  const handleReject = (em: any) => {
+    hospitalService.rejectIncomingEmergency(myHospitalId, em.emergencyId);
+  };
+
   return (
     <div className="p-6 space-y-8 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">{user?.organization}</h1>
-          <p className="text-slate-400 text-sm">{user?.department} · {user?.name}</p>
+          <h1 className="text-xl font-bold text-white">{myHospital.name}</h1>
+          <p className="text-slate-400 text-sm">{user?.department || 'Emergency Administration'} · {user?.name || 'Staff'}</p>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-400 font-medium">Hospital Status:</span>
+<<<<<<< HEAD
+          <select value={hospitalStatus} onChange={handleHospitalStatusChange}
+=======
           <select value={hospitalStatus} onChange={e => {
             const nextStatus = e.target.value;
             setHospitalStatus(nextStatus);
             apiRequest('/api/hospital/capacity', { method: 'PATCH', body: JSON.stringify({ operationalStatus: nextStatus, departments: capacity }) }).catch(() => undefined);
           }}
+>>>>>>> 3e38dae9f7e02b4024bcd1d970a07e7cf9f2ba74
             className="bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm font-medium text-white focus:outline-none focus:border-purple-400">
-            {STATUS_OPTS.map(s => <option key={s}>{s}</option>)}
+            {STATUS_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <StatusBadge status={hospitalStatus} size="md" />
         </div>
@@ -92,8 +146,8 @@ export default function HospitalDashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
         <KPICard label="General Beds Available" value={`${capacity['General Beds'].avail}/${capacity['General Beds'].total}`} accent="available" icon="🛏" />
         <KPICard label="ICU Beds Available" value={`${capacity['ICU Beds'].avail}/${capacity['ICU Beds'].total}`} accent="available" icon="🏥" />
-        <KPICard label="Incoming Ambulances" value={INCOMING.length} accent="warning" icon="🚑" />
-        <KPICard label="Critical Incoming" value={INCOMING.filter(i => i.severity === 'CRITICAL').length} accent="emergency" icon="⚡" />
+        <KPICard label="Incoming Ambulances" value={incomingEmergencies.length.toString()} accent="warning" icon="🚑" />
+        <KPICard label="Critical Incoming" value={incomingEmergencies.filter(i => i.severity === 'CRITICAL').length.toString()} accent="emergency" icon="⚡" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -101,34 +155,31 @@ export default function HospitalDashboard() {
         <div ref={capacityRef} className="bg-[#12183d] border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 scroll-mt-6">
           <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold mb-4">Capacity Management</p>
           <div className="space-y-4">
-            {Object.entries(capacity).map(([dept, d]) => {
-              const pct = d.avail / d.total;
-              return (
-                <div key={dept}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-medium text-white">{dept}</span>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-mono font-semibold ${d.status === 'AVAILABLE' ? 'text-green-400' : d.status === 'LIMITED' ? 'text-amber-400' : 'text-red-400'}`}>
-                        {d.avail}/{d.total}
-                      </span>
-                      <span className={`w-2 h-2 rounded-full ${d.status === 'AVAILABLE' ? 'bg-green-400' : d.status === 'LIMITED' ? 'bg-amber-400' : 'bg-red-400'}`} />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 bg-[#0d1530] rounded-full h-2">
-                      <div className={`h-2 rounded-full transition-all ${pct > 0.5 ? 'bg-green-500' : pct > 0.2 ? 'bg-amber-500' : 'bg-red-500'}`}
-                        style={{ width: `${pct * 100}%` }} />
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button onClick={() => updateAvail(dept, -1)}
-                        className="w-8 h-8 rounded-lg bg-[#1a2252] border border-white/10 text-white hover:bg-purple-700/30 text-xs flex items-center justify-center">−</button>
-                      <button onClick={() => updateAvail(dept, 1)}
-                        className="w-8 h-8 rounded-lg bg-[#1a2252] border border-white/10 text-white hover:bg-purple-700/30 text-xs flex items-center justify-center">+</button>
-                    </div>
+            {Object.entries(capacity).map(([dept, d]) => (
+              <div key={dept}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-sm font-medium text-white">{dept}</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-mono font-semibold ${d.status === 'AVAILABLE' ? 'text-green-400' : d.status === 'LIMITED' ? 'text-amber-400' : 'text-red-400'}`}>
+                      {d.avail}/{d.total}
+                    </span>
+                    <span className={`w-2 h-2 rounded-full ${d.status === 'AVAILABLE' ? 'bg-green-400' : d.status === 'LIMITED' ? 'bg-amber-400' : 'bg-red-400'}`} />
                   </div>
                 </div>
-              );
-            })}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 bg-[#0d1530] rounded-full h-2">
+                    <div className={`h-2 rounded-full transition-all ${d.pct > 0.5 ? 'bg-green-500' : d.pct > 0.2 ? 'bg-amber-500' : 'bg-red-500'}`}
+                      style={{ width: `${d.pct * 100}%` }} />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => updateAvail(dept, -1)}
+                      className="w-8 h-8 rounded-lg bg-[#1a2252] border border-white/10 text-white hover:bg-purple-700/30 text-xs flex items-center justify-center">−</button>
+                    <button onClick={() => updateAvail(dept, 1)}
+                      className="w-8 h-8 rounded-lg bg-[#1a2252] border border-white/10 text-white hover:bg-purple-700/30 text-xs flex items-center justify-center">+</button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -136,28 +187,28 @@ export default function HospitalDashboard() {
         <div className="space-y-6">
           <div ref={incomingRef} className="bg-[#12183d] border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 scroll-mt-6">
             <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold mb-4">Incoming Ambulances</p>
-            {INCOMING.length === 0 ? (
+            {incomingEmergencies.length === 0 ? (
               <p className="text-slate-400 text-sm text-center py-6">No incoming ambulances</p>
             ) : (
               <div className="space-y-3">
-                {INCOMING.map(inc => (
-                  <div key={inc.ambulance} className={`rounded-xl p-4 border ${inc.severity === 'CRITICAL' ? 'bg-red-900/20 border-red-500/30' : 'bg-amber-900/20 border-amber-500/30'}`}>
+                {incomingEmergencies.map(inc => (
+                  <div key={inc.emergencyId} className={`rounded-xl p-4 border ${inc.severity === 'CRITICAL' ? 'bg-red-900/20 border-red-500/30' : 'bg-amber-900/20 border-amber-500/30'}`}>
                     <div className="flex items-start justify-between mb-2">
                       <div>
-                        <span className="font-mono font-bold text-sm text-white">{inc.ambulance}</span>
-                        <span className="text-slate-400 text-xs ml-2 font-mono">{inc.emergency}</span>
+                        <span className="font-mono font-bold text-sm text-white">{inc.assignedAmbulanceId || 'Unknown Unit'}</span>
+                        <span className="text-slate-400 text-xs ml-2 font-mono">{inc.emergencyId}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <StatusBadge status={inc.severity} />
-                        <span className="font-bold text-white font-mono text-2xl">{inc.eta}</span>
+                        <span className="font-bold text-white font-mono text-2xl">{inc.eta || 'Unknown'}</span>
                       </div>
                     </div>
-                    <p className="text-sm text-slate-300 mb-3">{inc.type} · from {inc.location}</p>
+                    <p className="text-sm text-slate-300 mb-3">{inc.type} · from {inc.pickupLocation}</p>
                     <div className="flex gap-2">
-                      <button className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-2 rounded-xl font-semibold transition-colors">
+                      <button onClick={() => handleAccept(inc)} className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-2 rounded-xl font-semibold transition-colors">
                         Accept Incoming
                       </button>
-                      <button className="flex-1 border border-red-400 text-red-400 hover:bg-red-900/20 text-xs px-3 py-2 rounded-xl font-semibold transition-colors">
+                      <button onClick={() => handleReject(inc)} className="flex-1 border border-red-400 text-red-400 hover:bg-red-900/20 text-xs px-3 py-2 rounded-xl font-semibold transition-colors">
                         Mark Unavailable
                       </button>
                     </div>
@@ -172,10 +223,10 @@ export default function HospitalDashboard() {
             <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold mb-4">Emergency Readiness</p>
             <div className="space-y-2">
               {[
-                { name: 'Emergency Department', status: 'AVAILABLE' as CapacityStatus },
-                { name: 'ICU', status: 'AVAILABLE' as CapacityStatus },
-                { name: 'Trauma Unit', status: 'LIMITED' as CapacityStatus },
-                { name: 'Cardiac Unit', status: 'AVAILABLE' as CapacityStatus },
+                { name: 'Emergency Department', status: myHospital.emergencyDepartmentStatus as CapacityStatus },
+                { name: 'ICU', status: capacity['ICU Beds'].status },
+                { name: 'Trauma Unit', status: capacity['Trauma Unit'].status },
+                { name: 'Cardiac Unit', status: capacity['Cardiac Unit'].status },
                 { name: 'Ventilators', status: 'AVAILABLE' as CapacityStatus },
                 { name: 'Defibrillators', status: 'AVAILABLE' as CapacityStatus },
               ].map(r => (
@@ -208,16 +259,16 @@ export default function HospitalDashboard() {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {INCOMING.map(inc => (
-              <tr key={inc.ambulance} className="hover:bg-white/5">
-                <td className="px-4 py-3 font-mono text-xs font-bold text-white">{inc.ambulance}</td>
-                <td className="px-4 py-3 font-mono text-xs text-purple-300">{inc.emergency}</td>
+            {incomingEmergencies.map(inc => (
+              <tr key={inc.emergencyId} className="hover:bg-white/5">
+                <td className="px-4 py-3 font-mono text-xs font-bold text-white">{inc.assignedAmbulanceId || '—'}</td>
+                <td className="px-4 py-3 font-mono text-xs text-purple-300">{inc.emergencyId}</td>
                 <td className="px-4 py-3 text-white">{inc.type}</td>
                 <td className="px-4 py-3"><StatusBadge status={inc.severity} /></td>
-                <td className="px-4 py-3 font-mono text-xs font-bold text-white">{inc.eta}</td>
-                <td className="px-4 py-3 text-slate-400 text-xs">{inc.location}</td>
-                <td className="px-4 py-3"><StatusBadge status={inc.route} /></td>
-                <td className="px-4 py-3"><StatusBadge status={inc.arrival} /></td>
+                <td className="px-4 py-3 font-mono text-xs font-bold text-white">{inc.eta || 'Unknown'}</td>
+                <td className="px-4 py-3 text-slate-400 text-xs">{inc.pickupLocation}</td>
+                <td className="px-4 py-3"><StatusBadge status="ON ROUTE" /></td>
+                <td className="px-4 py-3"><StatusBadge status="EXPECTED" /></td>
               </tr>
             ))}
           </tbody>

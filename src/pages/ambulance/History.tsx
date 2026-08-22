@@ -1,13 +1,13 @@
 import StatusBadge from '../../components/StatusBadge';
-
-const HISTORY = [
-  { id: 'EM-2024-0831', type: 'Cardiac Arrest', severity: 'CRITICAL', pickup: '88 Elm St', hospital: 'City General', status: 'COMPLETED', duration: '18 min', date: 'Aug 22, 14:05' },
-  { id: 'EM-2024-0819', type: 'Fall Injury', severity: 'MEDIUM', pickup: '14 Park Blvd', hospital: 'Metro Health', status: 'COMPLETED', duration: '24 min', date: 'Aug 22, 12:45' },
-  { id: 'EM-2024-0804', type: 'Traffic Accident', severity: 'HIGH', pickup: 'I-95 Exit 7', hospital: 'St. Mary Medical', status: 'COMPLETED', duration: '31 min', date: 'Aug 22, 10:12' },
-  { id: 'EM-2024-0798', type: 'Respiratory', severity: 'HIGH', pickup: '210 Cedar Ave', hospital: 'City General', status: 'COMPLETED', duration: '22 min', date: 'Aug 21, 20:08' },
-];
+import { useSharedDataSync } from '../../hooks/useSharedDataSync';
 
 export default function AmbulanceHistory() {
+  const { emergencies, hospitals } = useSharedDataSync();
+
+  // For crew history, typically show completed emergencies, or all emergencies assigned to them.
+  // We'll show all COMPLETED emergencies for now, or just limit to a few.
+  const history = emergencies.filter(e => e.status === 'COMPLETED');
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-8">
       <h1 className="text-xl font-bold text-white">Emergency History</h1>
@@ -21,18 +21,29 @@ export default function AmbulanceHistory() {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {HISTORY.map(r => (
-              <tr key={r.id} className="hover:bg-white/5 transition-colors">
-                <td className="px-4 py-3 font-mono text-xs font-medium text-slate-200">{r.id}</td>
-                <td className="px-4 py-3 text-white">{r.type}</td>
-                <td className="px-4 py-3"><StatusBadge status={r.severity} /></td>
-                <td className="px-4 py-3 text-slate-400 text-xs">{r.pickup}</td>
-                <td className="px-4 py-3 text-slate-300 text-xs">{r.hospital}</td>
-                <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
-                <td className="px-4 py-3 font-mono text-xs text-slate-200">{r.duration}</td>
-                <td className="px-4 py-3 text-slate-400 text-xs">{r.date}</td>
+            {history.map(r => {
+              const recHospital = r.recommendedHospitalId ? hospitals.find(h => h.hospitalId === r.recommendedHospitalId)?.name : '—';
+              const date = new Date(r.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+              
+              return (
+                <tr key={r.emergencyId} className="hover:bg-white/5 transition-colors">
+                  <td className="px-4 py-3 font-mono text-xs font-medium text-slate-200">{r.emergencyId}</td>
+                  <td className="px-4 py-3 text-white">{r.type}</td>
+                  <td className="px-4 py-3"><StatusBadge status={r.severity} /></td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">{r.pickupLocation}</td>
+                  <td className="px-4 py-3 text-slate-300 text-xs">{recHospital}</td>
+                  <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-200">—</td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">{date}</td>
+                </tr>
+              );
+            })}
+            
+            {history.length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-slate-400">No history found.</td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>
