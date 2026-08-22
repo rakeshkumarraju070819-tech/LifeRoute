@@ -1,0 +1,10 @@
+{
+  "description": "Generates custom design layouts instantly to help users create professional visuals quickly and effortlessly for various projects.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
