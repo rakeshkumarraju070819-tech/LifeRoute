@@ -3,6 +3,7 @@ import { useLocation } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
 import StatusBadge from '../../components/StatusBadge';
 import TomTomMap from '../../components/TomTomMap';
+import { apiRequest } from '../../services/api';
 
 const STATUSES = ['AVAILABLE', 'DISPATCHED', 'EN ROUTE TO PATIENT', 'PATIENT PICKED UP', 'EN ROUTE TO HOSPITAL', 'ARRIVED'];
 
@@ -17,6 +18,7 @@ export default function AmbulanceDashboard() {
   const location = useLocation();
   const [status, setStatus] = useState('EN ROUTE TO PATIENT');
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [statusError, setStatusError] = useState('');
   const [recommendation, setRecommendation] = useState<{ hospitalName: string; etaMinutes: number; distanceKm: number; confidence: number; specialty: string; readiness: { specialtyReady: boolean; icuReady: boolean } } | null>(null);
   const [recommendationLoading, setRecommendationLoading] = useState(true);
   const emergencyRef = useRef<HTMLDivElement>(null);
@@ -54,6 +56,19 @@ export default function AmbulanceDashboard() {
       .finally(() => { if (!cancelled) setRecommendationLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  const updateStatus = async (nextStatus: string) => {
+    const previousStatus = status;
+    setStatusError('');
+    setStatus(nextStatus);
+    setShowStatusMenu(false);
+    try {
+      await apiRequest('/api/emergencies/EM-2024-0847/status', { method: 'PATCH', body: JSON.stringify({ status: nextStatus }) });
+    } catch (error) {
+      setStatus(previousStatus);
+      setStatusError(error instanceof Error ? error.message : 'Unable to update status.');
+    }
+  };
 
   return (
     <div className="p-6 space-y-8 max-w-7xl mx-auto">
@@ -93,7 +108,7 @@ export default function AmbulanceDashboard() {
             {showStatusMenu && (
               <div className="absolute right-0 top-full mt-2 bg-[#1a2252] border border-white/10 rounded-xl shadow-2xl z-10 py-1 w-64">
                 {STATUSES.map(s => (
-                  <button key={s} onClick={() => { setStatus(s); setShowStatusMenu(false); }}
+                  <button key={s} onClick={() => updateStatus(s)}
                     className="w-full text-left px-4 py-2.5 text-sm text-slate-200 hover:bg-white/5 flex items-center justify-between">
                     {s}
                     {s === status && <span className="text-purple-400">✓</span>}
@@ -102,6 +117,7 @@ export default function AmbulanceDashboard() {
               </div>
             )}
           </div>
+          {statusError && <p className="text-red-400 text-xs mt-2">{statusError}</p>}
         </div>
       </div>
 
