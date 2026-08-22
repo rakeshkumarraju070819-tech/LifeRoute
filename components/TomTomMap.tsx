@@ -268,7 +268,11 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
       (emergenciesSrc as GeoJSONSource).setData(filters.emergencies ? EMERGENCIES_FC : empty);
   }, [filters, status]);
 
-  const heightStyle = height === 'h-80' ? '320px' : height;
+  // If height looks like a CSS value (contains 'px', '%', 'vh', etc.) use it directly;
+  // otherwise treat it as a Tailwind shorthand and convert the common cases.
+  const heightStyle = /^\d/.test(height) || height.includes('px') || height.includes('%') || height.includes('vh')
+    ? height
+    : height === 'h-80' ? '320px' : height === 'h-96' ? '384px' : '320px';
 
   if (status === 'missing-key') {
     return (

@@ -36,7 +36,7 @@ export const emergencyService = {
       latitude: data.latitude || 0,
       longitude: data.longitude || 0,
       assignedAmbulanceId: data.assignedAmbulanceId || null,
-      recommendedHospitalId: null, // Will be calculated if needed
+      recommendedHospitalId: data.recommendedHospitalId ?? null,
       status: 'ASSIGNED',
       eta: data.eta || 'Calculating...',
       notes: data.notes || '',
@@ -73,14 +73,16 @@ export const emergencyService = {
   },
 
   updateEmergencyStatus: (id: string, status: EmergencyStatus): Emergency | null => {
-    const emergency = emergencyService.updateEmergency(id, { status });
-    if (emergency) {
-      if (status === 'COMPLETED') {
-        notificationService.addNotification({
-          message: `Emergency ${id} completed.`,
-          type: 'success'
-        });
-      }
+    const updates: Partial<Emergency> = { status };
+    if (status === 'COMPLETED') {
+      updates.assignedAmbulanceId = null;
+    }
+    const emergency = emergencyService.updateEmergency(id, updates);
+    if (emergency && status === 'COMPLETED') {
+      notificationService.addNotification({
+        message: `Emergency ${id} completed.`,
+        type: 'success'
+      });
     }
     return emergency;
   },

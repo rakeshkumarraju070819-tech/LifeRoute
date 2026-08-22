@@ -1,0 +1,50 @@
+--- src/pages/hospital/Dashboard.tsx
++++ src/pages/hospital/Dashboard.tsx
+@@ -1,6 +1,7 @@
+ import { useEffect, useRef, useState } from 'react';
+ import { useLocation } from 'react-router';
+ import { useAuth } from '../../context/AuthContext';
++import type { Hospital } from '../../types';
+ import StatusBadge from '../../components/StatusBadge';
+ import KPICard from '../../components/KPICard';
+ import { useSharedDataSync } from '../../hooks/useSharedDataSync';
+@@ -22,7 +23,12 @@
+   const myHospitalId = 'HOSP-001'; 
+   const myHospital = hospitals.find(h => h.hospitalId === myHospitalId);
+ 
+-  const [hospitalStatus, setHospitalStatus] = useState<string>(myHospital?.emergencyDepartmentStatus || 'AVAILABLE');
++  const [hospitalStatus, setHospitalStatus] = useState<string>('AVAILABLE');
++
++  // Keep local status in sync when shared data updates (e.g. after reset)
++  useEffect(() => {
++    if (myHospital) setHospitalStatus(myHospital.emergencyDepartmentStatus);
++  }, [myHospital?.emergencyDepartmentStatus]);
+ 
+   const incomingEmergencies = emergencies.filter(e => 
+     e.recommendedHospitalId === myHospitalId && 
+@@ -45,12 +51,12 @@
+   };
+ 
+   const handleHospitalStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+-    const val = e.target.value as any;
++    const val = e.target.value as Hospital['emergencyDepartmentStatus'];
+     setHospitalStatus(val);
+     hospitalService.updateHospitalCapacity(myHospitalId, { emergencyDepartmentStatus: val });
+   };
+ 
+-  const STATUS_OPTS = ['AVAILABLE', 'BUSY', 'LIMITED', 'FULL'];
++  const STATUS_OPTS: Hospital['emergencyDepartmentStatus'][] = ['AVAILABLE', 'BUSY', 'FULL'];
+ 
+   useEffect(() => {
+     if (location.pathname.endsWith('/capacity')) {
+@@ -74,8 +80,8 @@
+     'General Beds': { avail: myHospital.availableBeds, total: myHospital.totalBeds, status: getStatus(generalPct), pct: generalPct },
+     'ICU Beds': { avail: myHospital.icuAvailable, total: myHospital.icuTotal, status: getStatus(icuPct), pct: icuPct },
+     'Emergency Dept': { avail: myHospital.emergencyBedsAvailable, total: myHospital.emergencyBeds || 30, status: getStatus(emergencyPct), pct: emergencyPct },
+-    'Trauma Unit': { avail: myHospital.emergencyBedsAvailable > 0 ? 2 : 0, total: 4, status: getStatus(myHospital.emergencyBedsAvailable > 0 ? 0.5 : 0), pct: 0.5 },
+-    'Cardiac Unit': { avail: myHospital.icuAvailable > 0 ? 3 : 0, total: 6, status: getStatus(myHospital.icuAvailable > 0 ? 0.5 : 0), pct: 0.5 },
++    'Trauma Unit': { avail: myHospital.emergencyBedsAvailable > 0 ? 2 : 0, total: 4, status: getStatus(myHospital.emergencyBedsAvailable > 0 ? 0.5 : 0), pct: myHospital.emergencyBedsAvailable > 0 ? 0.5 : 0 },
++    'Cardiac Unit': { avail: myHospital.icuAvailable > 0 ? 3 : 0, total: 6, status: getStatus(myHospital.icuAvailable > 0 ? 0.5 : 0), pct: myHospital.icuAvailable > 0 ? 0.5 : 0 },
+   };
+ 
+   const handleAccept = (em: any) => {
