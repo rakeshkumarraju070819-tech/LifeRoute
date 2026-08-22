@@ -3,6 +3,7 @@ import { useLocation } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
 import StatusBadge from '../../components/StatusBadge';
 import KPICard from '../../components/KPICard';
+import { apiRequest } from '../../services/api';
 
 const INCOMING = [
   { ambulance: 'AMB-042', emergency: 'EM-2024-0847', type: 'Cardiac Arrest', severity: 'CRITICAL', eta: '4 min', location: 'Oak St', route: 'ON ROUTE', arrival: 'EXPECTED' },
@@ -32,13 +33,21 @@ export default function HospitalDashboard() {
     'Cardiac Unit': { avail: 3, total: 6, status: 'AVAILABLE' },
   });
 
+  useEffect(() => {
+    apiRequest<{ operationalStatus: string; departments: Record<string, CapacityDept> }>('/api/hospital/capacity')
+      .then(data => { setHospitalStatus(data.operationalStatus); setCapacity(data.departments); })
+      .catch(() => undefined);
+  }, []);
+
   const updateAvail = (dept: string, delta: number) => {
     setCapacity(c => {
       const d = c[dept];
       const next = Math.max(0, Math.min(d.total, d.avail + delta));
       const pct = next / d.total;
       const status: CapacityStatus = pct === 0 ? 'FULL' : pct < 0.3 ? 'LIMITED' : 'AVAILABLE';
-      return { ...c, [dept]: { ...d, avail: next, status } };
+      const updated = { ...c, [dept]: { ...d, avail: next, status } };
+      apiRequest('/api/hospital/capacity', { method: 'PATCH', body: JSON.stringify({ operationalStatus: hospitalStatus, departments: updated }) }).catch(() => undefined);
+      return updated;
     });
   };
 
@@ -67,7 +76,11 @@ export default function HospitalDashboard() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-400 font-medium">Hospital Status:</span>
-          <select value={hospitalStatus} onChange={e => setHospitalStatus(e.target.value)}
+          <select value={hospitalStatus} onChange={e => {
+            const nextStatus = e.target.value;
+            setHospitalStatus(nextStatus);
+            apiRequest('/api/hospital/capacity', { method: 'PATCH', body: JSON.stringify({ operationalStatus: nextStatus, departments: capacity }) }).catch(() => undefined);
+          }}
             className="bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm font-medium text-white focus:outline-none focus:border-purple-400">
             {STATUS_OPTS.map(s => <option key={s}>{s}</option>)}
           </select>

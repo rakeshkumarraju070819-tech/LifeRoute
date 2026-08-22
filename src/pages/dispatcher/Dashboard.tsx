@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router';
 import KPICard from '../../components/KPICard';
 import StatusBadge from '../../components/StatusBadge';
 import TomTomMap from '../../components/TomTomMap';
+import { apiRequest } from '../../services/api';
 
 function tabForPath(pathname: string): 'overview' | 'fleet' | 'map' {
   if (pathname.endsWith('/fleet')) return 'fleet';
@@ -40,6 +41,10 @@ export default function DispatcherDashboard() {
   const [filterSeverity, setFilterSeverity] = useState('ALL');
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [emergencies, setEmergencies] = useState(EMERGENCIES);
+  const [newEmergency, setNewEmergency] = useState({ type: 'Cardiac Arrest', severity: 'CRITICAL', location: '', ambulanceId: 'AMB-017', notes: '' });
+  const [createError, setCreateError] = useState('');
+  const [createLoading, setCreateLoading] = useState(false);
   const hospitalsRef = useRef<HTMLDivElement>(null);
 
   // Sidebar links (Emergencies / Fleet / Live Map / Hospitals) each point at a
@@ -53,11 +58,28 @@ export default function DispatcherDashboard() {
     }
   }, [location.pathname]);
 
-  const filteredEM = EMERGENCIES.filter(e => {
+  const filteredEM = emergencies.filter(e => {
     if (filterSeverity !== 'ALL' && e.severity !== filterSeverity) return false;
     if (search && !e.id.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
+
+  const createEmergency = async () => {
+    setCreateError('');
+    if (!newEmergency.location.trim()) { setCreateError('Pickup location is required.'); return; }
+    setCreateLoading(true);
+    try {
+      const created = await apiRequest<{ id: string; type: string; severity: string; location: string; ambulanceId?: string; status: string }>('/api/emergencies', { method: 'POST', body: JSON.stringify(newEmergency) });
+      const createdRow = { id: created.id, type: created.type, severity: created.severity, location: created.location, ambulance: created.ambulanceId || '—', status: created.status, eta: '—', hospital: '—', created: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
+      setEmergencies(current => [createdRow, ...current]);
+      setShowCreate(false);
+      setNewEmergency({ type: 'Cardiac Arrest', severity: 'CRITICAL', location: '', ambulanceId: 'AMB-017', notes: '' });
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Unable to create emergency.');
+    } finally {
+      setCreateLoading(false);
+    }
+  };
 
   return (
     <div className="p-6 space-y-8 max-w-7xl mx-auto">
@@ -225,41 +247,42 @@ export default function DispatcherDashboard() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">Emergency Type</label>
-                  <select className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400">
+                    <select value={newEmergency.type} onChange={e => setNewEmergency(current => ({ ...current, type: e.target.value }))} className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400">
                     <option>Cardiac Arrest</option><option>Traffic Accident</option><option>Respiratory</option><option>Trauma</option><option>Other</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">Severity</label>
-                  <select className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400">
+                    <select value={newEmergency.severity} onChange={e => setNewEmergency(current => ({ ...current, severity: e.target.value }))} className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400">
                     <option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option>
                   </select>
                 </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">Pickup Location</label>
-                <input className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-400" placeholder="Street address, zone…" />
+                <input value={newEmergency.location} onChange={e => setNewEmergency(current => ({ ...current, location: e.target.value }))} className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-400" placeholder="Street address, zone…" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">Assign Ambulance</label>
-                <select className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400">
+                <select value={newEmergency.ambulanceId} onChange={e => setNewEmergency(current => ({ ...current, ambulanceId: e.target.value }))} className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400">
                   <option>AMB-017 — Available · Station 7</option>
                   <option>AMB-009 — Available · Station 1</option>
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">Notes</label>
-                <textarea className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 h-20 resize-none" placeholder="Additional information…" />
+                <textarea value={newEmergency.notes} onChange={e => setNewEmergency(current => ({ ...current, notes: e.target.value }))} className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 h-20 resize-none" placeholder="Additional information…" />
               </div>
             </div>
+            {createError && <p className="text-red-400 text-sm mt-4">{createError}</p>}
             <div className="flex gap-3 mt-5">
               <button onClick={() => setShowCreate(false)}
                 className="flex-1 border border-white/10 text-slate-300 rounded-xl py-2.5 text-sm font-medium hover:bg-white/5">
                 Cancel
               </button>
-              <button onClick={() => setShowCreate(false)}
+              <button onClick={createEmergency} disabled={createLoading}
                 className="flex-1 bg-red-600 hover:bg-red-700 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors">
-                Dispatch Emergency
+                {createLoading ? 'Dispatching…' : 'Dispatch Emergency'}
               </button>
             </div>
           </div>
