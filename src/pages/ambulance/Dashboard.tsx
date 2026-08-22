@@ -3,14 +3,10 @@ import { useLocation } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
 import StatusBadge from '../../components/StatusBadge';
 import TomTomMap from '../../components/TomTomMap';
-<<<<<<< HEAD
 import { useSharedDataSync } from '../../hooks/useSharedDataSync';
 import { ambulanceService } from '../../services/ambulanceService';
 import { emergencyService } from '../../services/emergencyService';
 import { EmergencyStatus } from '../../types';
-=======
-import { apiRequest } from '../../services/api';
->>>>>>> 3e38dae9f7e02b4024bcd1d970a07e7cf9f2ba74
 
 const STATUSES = ['AVAILABLE', 'DISPATCHED', 'EN ROUTE TO PATIENT', 'PATIENT PICKED UP', 'EN ROUTE TO HOSPITAL', 'ARRIVED'];
 
@@ -68,7 +64,6 @@ export default function AmbulanceDashboard() {
     return () => { cancelled = true; };
   }, []);
 
-<<<<<<< HEAD
   const handleStatusChange = (newStatus: EmergencyStatus) => {
     if (myEmergency) {
       emergencyService.updateEmergencyStatus(myEmergency.emergencyId, newStatus);
@@ -103,18 +98,6 @@ export default function AmbulanceDashboard() {
         return [{ label: 'Complete Mission', color: 'bg-emerald-600 hover:bg-emerald-700 text-white', action: () => handleStatusChange('COMPLETED') }];
       default:
         return [];
-=======
-  const updateStatus = async (nextStatus: string) => {
-    const previousStatus = status;
-    setStatusError('');
-    setStatus(nextStatus);
-    setShowStatusMenu(false);
-    try {
-      await apiRequest('/api/emergencies/EM-2024-0847/status', { method: 'PATCH', body: JSON.stringify({ status: nextStatus }) });
-    } catch (error) {
-      setStatus(previousStatus);
-      setStatusError(error instanceof Error ? error.message : 'Unable to update status.');
->>>>>>> 3e38dae9f7e02b4024bcd1d970a07e7cf9f2ba74
     }
   };
 
@@ -156,14 +139,10 @@ export default function AmbulanceDashboard() {
             {showStatusMenu && (
               <div className="absolute right-0 top-full mt-2 bg-[#1a2252] border border-white/10 rounded-xl shadow-2xl z-10 py-1 w-64">
                 {STATUSES.map(s => (
-<<<<<<< HEAD
                   <button key={s} onClick={() => {
                       ambulanceService.updateAmbulanceStatus(myAmbulanceId, s as any);
                       setShowStatusMenu(false);
                     }}
-=======
-                  <button key={s} onClick={() => updateStatus(s)}
->>>>>>> 3e38dae9f7e02b4024bcd1d970a07e7cf9f2ba74
                     className="w-full text-left px-4 py-2.5 text-sm text-slate-200 hover:bg-white/5 flex items-center justify-between">
                     {s}
                     {s === myAmbulance?.status && <span className="text-purple-400">✓</span>}
