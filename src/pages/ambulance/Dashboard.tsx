@@ -2,15 +2,23 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
 import StatusBadge from '../../components/StatusBadge';
-import MapPlaceholder from '../../components/MapPlaceholder';
+import TomTomMap from '../../components/TomTomMap';
 
 const STATUSES = ['AVAILABLE', 'DISPATCHED', 'EN ROUTE TO PATIENT', 'PATIENT PICKED UP', 'EN ROUTE TO HOSPITAL', 'ARRIVED'];
+
+const HOSPITAL_OPTIONS = [
+  { id: 'H1', name: 'City General Hospital', status: 'OPEN', location: { lat: 40.7135, lng: -74.002 }, emergencyDepartment: { status: 'AVAILABLE' }, icu: { available: 12, total: 20 }, cardiac: { status: 'AVAILABLE' }, trauma: { status: 'AVAILABLE' } },
+  { id: 'H2', name: 'St. Mary Medical Center', status: 'LIMITED', location: { lat: 40.719, lng: -73.99 }, emergencyDepartment: { status: 'LIMITED' }, icu: { available: 2, total: 20 }, cardiac: { status: 'AVAILABLE' }, trauma: { status: 'LIMITED' } },
+  { id: 'H3', name: 'Metro Health Hospital', status: 'OPEN', location: { lat: 40.722, lng: -74.012 }, emergencyDepartment: { status: 'AVAILABLE' }, icu: { available: 5, total: 16 }, cardiac: { status: 'LIMITED' }, trauma: { status: 'AVAILABLE' } },
+];
 
 export default function AmbulanceDashboard() {
   const { user } = useAuth();
   const location = useLocation();
   const [status, setStatus] = useState('EN ROUTE TO PATIENT');
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [recommendation, setRecommendation] = useState<{ hospitalName: string; etaMinutes: number; distanceKm: number; confidence: number; specialty: string; readiness: { specialtyReady: boolean; icuReady: boolean } } | null>(null);
+  const [recommendationLoading, setRecommendationLoading] = useState(true);
   const emergencyRef = useRef<HTMLDivElement>(null);
   const navigationRef = useRef<HTMLDivElement>(null);
 
@@ -24,6 +32,28 @@ export default function AmbulanceDashboard() {
       navigationRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [location.pathname]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/ai/recommend-hospital', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        emergencyType: 'Cardiac Arrest',
+        severity: 'CRITICAL',
+        origin: { lat: 40.7128, lng: -74.006 },
+        hospitals: HOSPITAL_OPTIONS,
+      }),
+    })
+      .then(response => {
+        if (!response.ok) throw new Error('Recommendation unavailable');
+        return response.json();
+      })
+      .then(data => { if (!cancelled) setRecommendation(data); })
+      .catch(() => { if (!cancelled) setRecommendation(null); })
+      .finally(() => { if (!cancelled) setRecommendationLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="p-6 space-y-8 max-w-7xl mx-auto">
@@ -76,7 +106,7 @@ export default function AmbulanceDashboard() {
       </div>
 
       {/* SECTION 2 — THREE EQUAL CARDS */}
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Card A: Current Location */}
         <div className="bg-[#12183d] border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 flex flex-col items-center text-center">
           <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold mb-4 self-start">Current Location</p>
@@ -117,14 +147,23 @@ export default function AmbulanceDashboard() {
             <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold">AI Hospital Recommendation</p>
             <span className="text-xs bg-purple-600/30 text-purple-200 px-2.5 py-1 rounded-full font-mono font-semibold">AI</span>
           </div>
-          <p className="text-white text-xl font-bold mb-1">City General Hospital</p>
-          <p className="text-purple-300 text-4xl font-mono font-bold mb-1">8 min</p>
-          <p className="text-slate-400 text-sm mb-4">3.2 km via Route 7</p>
+          {recommendationLoading ? (
+            <p className="text-slate-400 text-sm py-6">Calculating safest destination…</p>
+          ) : recommendation ? (
+            <>
+              <p className="text-white text-xl font-bold mb-1">{recommendation.hospitalName}</p>
+              <p className="text-purple-300 text-4xl font-mono font-bold mb-1">{recommendation.etaMinutes} min</p>
+              <p className="text-slate-400 text-sm mb-4">{recommendation.distanceKm} km estimated travel distance</p>
+            </>
+          ) : (
+            <p className="text-amber-300 text-sm py-6">Hospital recommendation unavailable. Contact dispatch.</p>
+          )}
+          {recommendation && <>
           <div className="space-y-2 mb-4">
             {[
               { label: 'Emergency Dept', ok: true },
-              { label: 'ICU', ok: true },
-              { label: 'Cardiac', ok: true },
+              { label: 'ICU', ok: recommendation.readiness.icuReady },
+              { label: 'Cardiac', ok: recommendation.readiness.specialtyReady },
             ].map(r => (
               <div key={r.label} className="flex items-center justify-between text-sm">
                 <span className="text-slate-300 flex items-center gap-2">
@@ -137,7 +176,8 @@ export default function AmbulanceDashboard() {
               </div>
             ))}
           </div>
-          <p className="text-green-400 font-bold text-sm border-t border-white/10 pt-3">97% Ready</p>
+          <p className="text-green-400 font-bold text-sm border-t border-white/10 pt-3">{recommendation.confidence}% recommendation confidence</p>
+          </>}
         </div>
       </div>
 
@@ -154,7 +194,7 @@ export default function AmbulanceDashboard() {
           </div>
         </div>
         <div className="rounded-2xl overflow-hidden border border-white/10">
-          <MapPlaceholder height="380px" variant="crew" />
+          <TomTomMap height="380px" variant="crew" />
         </div>
         <div className="grid grid-cols-3 gap-4 mt-6">
           <div className="bg-[#1a2252] rounded-xl px-4 py-3">
@@ -173,7 +213,7 @@ export default function AmbulanceDashboard() {
       </div>
 
       {/* SECTION 4 — TWO COLUMNS */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-[#12183d] border border-[rgba(255,255,255,0.08)] rounded-2xl p-6">
           <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold mb-4">Route Alerts</p>
           <div className="space-y-3">

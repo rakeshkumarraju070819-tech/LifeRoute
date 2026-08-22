@@ -16,12 +16,10 @@ export default function Login() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const result = await login(email, password);
+    const result = await login(email, password, remember);
     setLoading(false);
     if (!result.success) { setError(result.error ?? 'Login failed.'); return; }
-    // redirect based on role happens via user context in routes
-    const role = email.includes('crew') ? '/crew' : email.includes('dispatch') ? '/dispatcher' : '/hospital';
-    navigate(role);
+    navigate('/dashboard');
   };
 
   const demoLogin = (role: 'crew' | 'dispatch' | 'hospital') => {

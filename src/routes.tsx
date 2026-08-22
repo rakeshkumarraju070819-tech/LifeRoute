@@ -4,6 +4,7 @@ import Landing from './pages/Landing';
 import Login from './pages/Login';
 import SignUp from './pages/SignUp';
 import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import DashboardLayout from './layouts/DashboardLayout';
 import AmbulanceDashboard from './pages/ambulance/Dashboard';
 import AmbulanceHistory from './pages/ambulance/History';
@@ -39,6 +40,7 @@ export const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
   { path: '/signup', element: <SignUp /> },
   { path: '/forgot-password', element: <ForgotPassword /> },
+  { path: '/reset-password', element: <ResetPassword /> },
   { path: '/dashboard', element: <RoleRedirect /> },
 
   // Ambulance Crew routes

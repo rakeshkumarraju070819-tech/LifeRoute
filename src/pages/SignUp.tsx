@@ -52,8 +52,9 @@ export default function SignUp() {
     e.preventDefault();
     if (!validate()) return;
     setLoading(true);
-    await signup({ ...form, role: form.role as Role });
+    const result = await signup({ ...form, role: form.role as Role });
     setLoading(false);
+    if (!result.success) { setErrors({ form: result.error ?? 'Signup failed.' }); return; }
     setStep('success');
   };
 
@@ -93,6 +94,7 @@ export default function SignUp() {
           <p className="text-slate-400 text-sm mb-8">Join the emergency response network</p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
+            {errors.form && <p className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm">{errors.form}</p>}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-slate-300 text-sm font-medium mb-1.5">Full Name *</label>

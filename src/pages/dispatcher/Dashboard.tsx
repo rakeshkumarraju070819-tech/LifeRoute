@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import KPICard from '../../components/KPICard';
 import StatusBadge from '../../components/StatusBadge';
-import MapPlaceholder from '../../components/MapPlaceholder';
+import TomTomMap from '../../components/TomTomMap';
 
 function tabForPath(pathname: string): 'overview' | 'fleet' | 'map' {
   if (pathname.endsWith('/fleet')) return 'fleet';
@@ -73,7 +73,7 @@ export default function DispatcherDashboard() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-5 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-6">
         <KPICard label="Active Emergencies" value="3" accent="emergency" icon="🚨" />
         <KPICard label="Available Ambulances" value="2" accent="available" icon="🚑" />
         <KPICard label="Active Ambulances" value="3" accent="active" icon="📡" />
@@ -108,7 +108,7 @@ export default function DispatcherDashboard() {
               <option value="LOW">Low</option>
             </select>
           </div>
-          <div className="bg-[#12183d] rounded-2xl overflow-hidden">
+          <div className="bg-[#12183d] rounded-2xl overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[#0d1530] border-b border-white/5">
@@ -138,7 +138,7 @@ export default function DispatcherDashboard() {
       )}
 
       {tab === 'fleet' && (
-        <div className="bg-[#12183d] rounded-2xl overflow-hidden">
+        <div className="bg-[#12183d] rounded-2xl overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-[#0d1530] border-b border-white/5">
@@ -174,7 +174,7 @@ export default function DispatcherDashboard() {
             <p className="text-xs text-slate-400 font-mono">Auto-refresh every 5s</p>
           </div>
           <div className="rounded-2xl overflow-hidden">
-            <MapPlaceholder height="480px" showFilters variant="dispatcher" />
+            <TomTomMap height="480px" showFilters variant="dispatcher" />
           </div>
         </div>
       )}
@@ -182,7 +182,7 @@ export default function DispatcherDashboard() {
       {/* Hospital status strip */}
       <div ref={hospitalsRef} className="bg-[#12183d] border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 scroll-mt-6">
         <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold mb-4">Hospital Network Status</p>
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
             { name: 'City General Hospital', ed: 'AVAILABLE', icu: '12/20', beds: '45/80', trauma: 'AVAILABLE', cardiac: 'AVAILABLE', incoming: 'AMB-042 · 4 min' },
             { name: 'St. Mary Medical Center', ed: 'LIMITED', icu: '18/20', beds: '61/80', trauma: 'LIMITED', cardiac: 'AVAILABLE', incoming: 'AMB-085 · 9 min' },
