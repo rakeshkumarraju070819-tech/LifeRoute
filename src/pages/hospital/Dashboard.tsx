@@ -108,19 +108,11 @@ export default function HospitalDashboard() {
       </div>
 
       {/* KPIs */}
-<<<<<<< Updated upstream
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
         <KPICard label="General Beds Available" value={`${capacity['General Beds'].avail}/${capacity['General Beds'].total}`} accent="available" icon="🛏" />
         <KPICard label="ICU Beds Available" value={`${capacity['ICU Beds'].avail}/${capacity['ICU Beds'].total}`} accent="available" icon="🏥" />
-        <KPICard label="Incoming Ambulances" value={INCOMING.length} accent="warning" icon="🚑" />
-        <KPICard label="Critical Incoming" value={INCOMING.filter(i => i.severity === 'CRITICAL').length} accent="emergency" icon="⚡" />
-=======
-      <div className="grid grid-cols-4 gap-6">
-        <KPICard label="General Beds Available" value={`${myHospital.availableBeds}/${myHospital.totalBeds}`} accent="available" icon="🛏" />
-        <KPICard label="ICU Beds Available" value={`${myHospital.icuAvailable}/${myHospital.icuTotal}`} accent="available" icon="🏥" />
         <KPICard label="Incoming Ambulances" value={incomingEmergencies.length.toString()} accent="warning" icon="🚑" />
         <KPICard label="Critical Incoming" value={incomingEmergencies.filter(i => i.severity === 'CRITICAL').length.toString()} accent="emergency" icon="⚡" />
->>>>>>> Stashed changes
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

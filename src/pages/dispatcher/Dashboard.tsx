@@ -2,16 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import KPICard from '../../components/KPICard';
 import StatusBadge from '../../components/StatusBadge';
-<<<<<<< Updated upstream
 import TomTomMap from '../../components/TomTomMap';
-=======
-import MapPlaceholder from '../../components/MapPlaceholder';
 import { useSharedDataSync } from '../../hooks/useSharedDataSync';
 import { emergencyService } from '../../services/emergencyService';
 import { ambulanceService } from '../../services/ambulanceService';
-import { hospitalService } from '../../services/hospitalService';
-import { Emergency, Ambulance } from '../../types';
->>>>>>> Stashed changes
 
 function tabForPath(pathname: string): 'overview' | 'fleet' | 'map' {
   if (pathname.endsWith('/fleet')) return 'fleet';
@@ -35,12 +29,8 @@ export default function DispatcherDashboard() {
   const [showCreate, setShowCreate] = useState(false);
   const hospitalsRef = useRef<HTMLDivElement>(null);
 
-  // Data Layer Sync
+  // Data Layer Sync — single unified hook handles all portals + cross-tab
   const { emergencies, ambulances, hospitals } = useSharedDataSync();
-
-  useEffect(() => {
-    console.log('[SYNC] Dispatcher updated');
-  }, [emergencies, ambulances, hospitals]);
 
   // Form State
   const [formType, setFormType] = useState('Cardiac Arrest');
@@ -73,7 +63,7 @@ export default function DispatcherDashboard() {
 
   const handleDispatch = () => {
     if (!formLocation) return alert("Please specify a pickup location.");
-    
+
     const emergency = emergencyService.createEmergency({
       type: formType,
       severity: formSeverity,
@@ -85,7 +75,7 @@ export default function DispatcherDashboard() {
     if (formAmbulanceId) {
       ambulanceService.assignAmbulance(formAmbulanceId, emergency.emergencyId);
     }
-    
+
     setShowCreate(false);
     // Reset form
     setFormType('Cardiac Arrest');
@@ -109,21 +99,12 @@ export default function DispatcherDashboard() {
       </div>
 
       {/* KPIs */}
-<<<<<<< Updated upstream
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-6">
-        <KPICard label="Active Emergencies" value="3" accent="emergency" icon="🚨" />
-        <KPICard label="Available Ambulances" value="2" accent="available" icon="🚑" />
-        <KPICard label="Active Ambulances" value="3" accent="active" icon="📡" />
-        <KPICard label="Hospitals Available" value="5" accent="available" icon="🏥" />
-        <KPICard label="Critical Emergencies" value="1" accent="emergency" icon="⚡" />
-=======
-      <div className="grid grid-cols-5 gap-6">
         <KPICard label="Active Emergencies" value={activeEmergenciesCount.toString()} accent="emergency" icon="🚨" />
         <KPICard label="Available Ambulances" value={availableAmbulancesCount.toString()} accent="available" icon="🚑" />
         <KPICard label="Active Ambulances" value={activeAmbulancesCount.toString()} accent="active" icon="📡" />
         <KPICard label="Hospitals Available" value={hospitalsAvailableCount.toString()} accent="available" icon="🏥" />
         <KPICard label="Critical Emergencies" value={criticalEmergenciesCount.toString()} accent="emergency" icon="⚡" />
->>>>>>> Stashed changes
       </div>
 
       {/* Tab bar */}
@@ -180,6 +161,11 @@ export default function DispatcherDashboard() {
                     </tr>
                   );
                 })}
+                {filteredEM.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-8 text-center text-slate-400">No emergencies found.</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -234,32 +220,11 @@ export default function DispatcherDashboard() {
       {/* Hospital status strip */}
       <div ref={hospitalsRef} className="bg-[#12183d] border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 scroll-mt-6">
         <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold mb-4">Hospital Network Status</p>
-<<<<<<< Updated upstream
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[
-            { name: 'City General Hospital', ed: 'AVAILABLE', icu: '12/20', beds: '45/80', trauma: 'AVAILABLE', cardiac: 'AVAILABLE', incoming: 'AMB-042 · 4 min' },
-            { name: 'St. Mary Medical Center', ed: 'LIMITED', icu: '18/20', beds: '61/80', trauma: 'LIMITED', cardiac: 'AVAILABLE', incoming: 'AMB-085 · 9 min' },
-            { name: 'Metro Health Hospital', ed: 'AVAILABLE', icu: '5/16', beds: '28/60', trauma: 'AVAILABLE', cardiac: 'AVAILABLE', incoming: 'None' },
-          ].map(h => (
-            <div key={h.name} className="bg-[#12183d] rounded-2xl p-6 border border-white/5">
-              <p className="text-white font-bold text-sm mb-3">{h.name}</p>
-              <div className="space-y-1.5 text-xs">
-                {[
-                  { k: 'Emergency Dept', v: h.ed },
-                  { k: 'ICU', v: h.icu },
-                  { k: 'General Beds', v: h.beds },
-                  { k: 'Trauma', v: h.trauma },
-                  { k: 'Cardiac', v: h.cardiac },
-                ].map(r => (
-                  <div key={r.k} className="flex justify-between">
-                    <span className="text-slate-400">{r.k}</span>
-                    <span className={`font-mono font-medium ${r.v === 'AVAILABLE' ? 'text-green-400' : r.v === 'LIMITED' ? 'text-amber-400' : 'text-slate-200'}`}>{r.v}</span>
-=======
-        <div className="grid grid-cols-3 gap-6">
           {hospitals.map(h => {
             const incoming = emergencies.filter(e => e.recommendedHospitalId === h.hospitalId && e.status === 'EN ROUTE TO HOSPITAL');
             const incomingText = incoming.length > 0 ? `${incoming[0].assignedAmbulanceId} · ${incoming[0].eta}` : 'None';
-            
+
             return (
               <div key={h.hospitalId} className="bg-[#12183d] rounded-2xl p-6 border border-white/5">
                 <p className="text-white font-bold text-sm mb-3">{h.name}</p>
@@ -279,7 +244,6 @@ export default function DispatcherDashboard() {
                   <div className="flex justify-between pt-1 border-t border-white/5">
                     <span className="text-slate-400">Incoming</span>
                     <span className="font-mono font-medium text-purple-300">{incomingText}</span>
->>>>>>> Stashed changes
                   </div>
                 </div>
               </div>
@@ -300,7 +264,7 @@ export default function DispatcherDashboard() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">Emergency Type</label>
-                  <select 
+                  <select
                     value={formType}
                     onChange={e => setFormType(e.target.value)}
                     className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400">
@@ -314,7 +278,7 @@ export default function DispatcherDashboard() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">Severity</label>
-                  <select 
+                  <select
                     value={formSeverity}
                     onChange={e => setFormSeverity(e.target.value as any)}
                     className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400">
@@ -327,14 +291,14 @@ export default function DispatcherDashboard() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">Pickup Location</label>
-                <input 
+                <input
                   value={formLocation}
                   onChange={e => setFormLocation(e.target.value)}
                   className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-400" placeholder="Street address, zone…" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">Assign Ambulance</label>
-                <select 
+                <select
                   value={formAmbulanceId}
                   onChange={e => setFormAmbulanceId(e.target.value)}
                   className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400">
@@ -346,7 +310,7 @@ export default function DispatcherDashboard() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">Notes</label>
-                <textarea 
+                <textarea
                   value={formNotes}
                   onChange={e => setFormNotes(e.target.value)}
                   className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 h-20 resize-none" placeholder="Additional information…" />

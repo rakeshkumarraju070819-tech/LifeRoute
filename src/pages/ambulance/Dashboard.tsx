@@ -2,16 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
 import StatusBadge from '../../components/StatusBadge';
-<<<<<<< Updated upstream
 import TomTomMap from '../../components/TomTomMap';
-=======
-import MapPlaceholder from '../../components/MapPlaceholder';
 import { useSharedDataSync } from '../../hooks/useSharedDataSync';
 import { ambulanceService } from '../../services/ambulanceService';
 import { emergencyService } from '../../services/emergencyService';
-import { hospitalService } from '../../services/hospitalService';
 import { EmergencyStatus } from '../../types';
->>>>>>> Stashed changes
 
 const STATUSES = ['AVAILABLE', 'DISPATCHED', 'EN ROUTE TO PATIENT', 'PATIENT PICKED UP', 'EN ROUTE TO HOSPITAL', 'ARRIVED'];
 
@@ -30,14 +25,10 @@ export default function AmbulanceDashboard() {
   const emergencyRef = useRef<HTMLDivElement>(null);
   const navigationRef = useRef<HTMLDivElement>(null);
 
-  // Data Layer
+  // Data Layer — single unified hook handles all portals + cross-tab
   const { ambulances, emergencies, hospitals } = useSharedDataSync();
 
-  useEffect(() => {
-    console.log('[SYNC] Crew updated');
-  }, [ambulances, emergencies, hospitals]);
-
-  const myAmbulanceId = user?.ambulanceId || 'AMB-017'; // Fallback for dev if user not fully mocked
+  const myAmbulanceId = user?.ambulanceId || 'AMB-017';
   const myAmbulance = ambulances.find(a => a.ambulanceId === myAmbulanceId);
   const myEmergency = myAmbulance?.assignedEmergencyId ? emergencies.find(e => e.emergencyId === myAmbulance?.assignedEmergencyId && e.status !== 'COMPLETED') : null;
   const recommendedHospital = myEmergency?.recommendedHospitalId ? hospitals.find(h => h.hospitalId === myEmergency.recommendedHospitalId) : null;
@@ -50,7 +41,6 @@ export default function AmbulanceDashboard() {
     }
   }, [location.pathname]);
 
-<<<<<<< Updated upstream
   useEffect(() => {
     let cancelled = false;
     fetch('/api/ai/recommend-hospital', {
@@ -72,17 +62,16 @@ export default function AmbulanceDashboard() {
       .finally(() => { if (!cancelled) setRecommendationLoading(false); });
     return () => { cancelled = true; };
   }, []);
-=======
+
   const handleStatusChange = (newStatus: EmergencyStatus) => {
     if (myEmergency) {
       emergencyService.updateEmergencyStatus(myEmergency.emergencyId, newStatus);
-      
+
       // Sync ambulance status loosely with emergency status
       if (newStatus === 'COMPLETED') {
         ambulanceService.updateAmbulanceStatus(myAmbulanceId, 'AVAILABLE');
         ambulanceService.updateAmbulance(myAmbulanceId, { assignedEmergencyId: null });
       } else {
-        // En route statuses map to EN ROUTE
         ambulanceService.updateAmbulanceStatus(myAmbulanceId, 'EN ROUTE');
       }
     }
@@ -110,7 +99,6 @@ export default function AmbulanceDashboard() {
         return [];
     }
   };
->>>>>>> Stashed changes
 
   return (
     <div className="p-6 space-y-8 max-w-7xl mx-auto">
@@ -150,9 +138,9 @@ export default function AmbulanceDashboard() {
             {showStatusMenu && (
               <div className="absolute right-0 top-full mt-2 bg-[#1a2252] border border-white/10 rounded-xl shadow-2xl z-10 py-1 w-64">
                 {STATUSES.map(s => (
-                  <button key={s} onClick={() => { 
-                      ambulanceService.updateAmbulanceStatus(myAmbulanceId, s as any); 
-                      setShowStatusMenu(false); 
+                  <button key={s} onClick={() => {
+                      ambulanceService.updateAmbulanceStatus(myAmbulanceId, s as any);
+                      setShowStatusMenu(false);
                     }}
                     className="w-full text-left px-4 py-2.5 text-sm text-slate-200 hover:bg-white/5 flex items-center justify-between">
                     {s}
@@ -215,7 +203,6 @@ export default function AmbulanceDashboard() {
             <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold">AI Hospital Recommendation</p>
             <span className="text-xs bg-purple-600/30 text-purple-200 px-2.5 py-1 rounded-full font-mono font-semibold">AI</span>
           </div>
-<<<<<<< Updated upstream
           {recommendationLoading ? (
             <p className="text-slate-400 text-sm py-6">Calculating safest destination…</p>
           ) : recommendation ? (
@@ -223,32 +210,26 @@ export default function AmbulanceDashboard() {
               <p className="text-white text-xl font-bold mb-1">{recommendation.hospitalName}</p>
               <p className="text-purple-300 text-4xl font-mono font-bold mb-1">{recommendation.etaMinutes} min</p>
               <p className="text-slate-400 text-sm mb-4">{recommendation.distanceKm} km estimated travel distance</p>
-            </>
-          ) : (
-            <p className="text-amber-300 text-sm py-6">Hospital recommendation unavailable. Contact dispatch.</p>
-          )}
-          {recommendation && <>
-          <div className="space-y-2 mb-4">
-            {[
-              { label: 'Emergency Dept', ok: true },
-              { label: 'ICU', ok: recommendation.readiness.icuReady },
-              { label: 'Cardiac', ok: recommendation.readiness.specialtyReady },
-            ].map(r => (
-              <div key={r.label} className="flex items-center justify-between text-sm">
-                <span className="text-slate-300 flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${r.ok ? 'bg-green-400' : 'bg-amber-400'}`} />
-                  {r.label}
-                </span>
-                <div className="flex-1 mx-3 h-1.5 rounded-full bg-white/10 overflow-hidden">
-                  <div className={`h-full rounded-full ${r.ok ? 'bg-green-400 w-[90%]' : 'bg-amber-400 w-[45%]'}`} />
-                </div>
+              <div className="space-y-2 mb-4">
+                {[
+                  { label: 'Emergency Dept', ok: true },
+                  { label: 'ICU', ok: recommendation.readiness.icuReady },
+                  { label: 'Cardiac', ok: recommendation.readiness.specialtyReady },
+                ].map(r => (
+                  <div key={r.label} className="flex items-center justify-between text-sm">
+                    <span className="text-slate-300 flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${r.ok ? 'bg-green-400' : 'bg-amber-400'}`} />
+                      {r.label}
+                    </span>
+                    <div className="flex-1 mx-3 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                      <div className={`h-full rounded-full ${r.ok ? 'bg-green-400 w-[90%]' : 'bg-amber-400 w-[45%]'}`} />
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <p className="text-green-400 font-bold text-sm border-t border-white/10 pt-3">{recommendation.confidence}% recommendation confidence</p>
-          </>}
-=======
-          {myEmergency && recommendedHospital ? (
+              <p className="text-green-400 font-bold text-sm border-t border-white/10 pt-3">{recommendation.confidence}% recommendation confidence</p>
+            </>
+          ) : myEmergency && recommendedHospital ? (
             <>
               <p className="text-white text-xl font-bold mb-1">{recommendedHospital.name}</p>
               <p className="text-slate-400 text-sm mb-4">{recommendedHospital.emergencyDepartmentStatus === 'AVAILABLE' ? 'Emergency Dept Available' : 'Emergency Dept Busy'}</p>
@@ -272,10 +253,9 @@ export default function AmbulanceDashboard() {
             </>
           ) : (
              <div className="flex flex-col items-center justify-center h-40">
-               <p className="text-slate-400">Waiting for emergency assignment...</p>
+               <p className="text-amber-300 text-sm">Hospital recommendation unavailable. Contact dispatch.</p>
              </div>
           )}
->>>>>>> Stashed changes
         </div>
       </div>
 
@@ -322,15 +302,15 @@ export default function AmbulanceDashboard() {
           <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold mb-4">Emergency Actions</p>
           <div className="grid grid-cols-2 gap-4">
             {getActionButtons().map(a => (
-              <button 
-                key={a.label} 
+              <button
+                key={a.label}
                 onClick={a.action}
                 className={`${a.color} rounded-xl py-4 text-sm font-semibold transition-colors text-center px-4`}
               >
                 {a.label}
               </button>
             ))}
-            
+
             {getActionButtons().length === 0 && (
                <p className="text-slate-400 col-span-2 text-center text-sm py-8">No actions available.</p>
             )}
