@@ -3,9 +3,18 @@ import { useLocation } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
 import StatusBadge from '../../components/StatusBadge';
 import KPICard from '../../components/KPICard';
+<<<<<<< HEAD
 import { useSharedDataSync } from '../../hooks/useSharedDataSync';
 import { hospitalService } from '../../services/hospitalService';
 import { emergencyService } from '../../services/emergencyService';
+=======
+import { apiRequest } from '../../services/api';
+
+const INCOMING = [
+  { ambulance: 'AMB-042', emergency: 'EM-2024-0847', type: 'Cardiac Arrest', severity: 'CRITICAL', eta: '4 min', location: 'Oak St', route: 'ON ROUTE', arrival: 'EXPECTED' },
+  { ambulance: 'AMB-085', emergency: 'EM-2024-0848', type: 'Traffic Accident', severity: 'HIGH', eta: '9 min', location: 'River Rd', route: 'ON ROUTE', arrival: 'EXPECTED' },
+];
+>>>>>>> 3e38dae9f7e02b4024bcd1d970a07e7cf9f2ba74
 
 type CapacityStatus = 'AVAILABLE' | 'LIMITED' | 'FULL';
 
@@ -33,7 +42,14 @@ export default function HospitalDashboard() {
     e.status === 'EN ROUTE TO HOSPITAL'
   );
 
+  useEffect(() => {
+    apiRequest<{ operationalStatus: string; departments: Record<string, CapacityDept> }>('/api/hospital/capacity')
+      .then(data => { setHospitalStatus(data.operationalStatus); setCapacity(data.departments); })
+      .catch(() => undefined);
+  }, []);
+
   const updateAvail = (dept: string, delta: number) => {
+<<<<<<< HEAD
     if (!myHospital) return;
 
     if (dept === 'General Beds') {
@@ -46,6 +62,17 @@ export default function HospitalDashboard() {
       const next = Math.max(0, Math.min(30, myHospital.emergencyBedsAvailable + delta)); // Mock total to 30
       hospitalService.updateHospitalCapacity(myHospitalId, { emergencyBedsAvailable: next });
     }
+=======
+    setCapacity(c => {
+      const d = c[dept];
+      const next = Math.max(0, Math.min(d.total, d.avail + delta));
+      const pct = next / d.total;
+      const status: CapacityStatus = pct === 0 ? 'FULL' : pct < 0.3 ? 'LIMITED' : 'AVAILABLE';
+      const updated = { ...c, [dept]: { ...d, avail: next, status } };
+      apiRequest('/api/hospital/capacity', { method: 'PATCH', body: JSON.stringify({ operationalStatus: hospitalStatus, departments: updated }) }).catch(() => undefined);
+      return updated;
+    });
+>>>>>>> 3e38dae9f7e02b4024bcd1d970a07e7cf9f2ba74
   };
 
   const handleHospitalStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -99,7 +126,15 @@ export default function HospitalDashboard() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-400 font-medium">Hospital Status:</span>
+<<<<<<< HEAD
           <select value={hospitalStatus} onChange={handleHospitalStatusChange}
+=======
+          <select value={hospitalStatus} onChange={e => {
+            const nextStatus = e.target.value;
+            setHospitalStatus(nextStatus);
+            apiRequest('/api/hospital/capacity', { method: 'PATCH', body: JSON.stringify({ operationalStatus: nextStatus, departments: capacity }) }).catch(() => undefined);
+          }}
+>>>>>>> 3e38dae9f7e02b4024bcd1d970a07e7cf9f2ba74
             className="bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm font-medium text-white focus:outline-none focus:border-purple-400">
             {STATUS_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
