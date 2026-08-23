@@ -6,6 +6,7 @@ import TomTomMap from '../../components/TomTomMap';
 import { useSharedDataSync } from '../../hooks/useSharedDataSync';
 import { ambulanceService } from '../../services/ambulanceService';
 import { emergencyService } from '../../services/emergencyService';
+import { hospitalService } from '../../services/hospitalService';
 import { EmergencyStatus } from '../../types';
 
 const STATUSES = ['AVAILABLE', 'DISPATCHED', 'EN ROUTE TO PATIENT', 'PATIENT PICKED UP', 'EN ROUTE TO HOSPITAL', 'ARRIVED'];
@@ -29,10 +30,17 @@ export default function AmbulanceDashboard() {
   // Data Layer — single unified hook handles all portals + cross-tab
   const { ambulances, emergencies, hospitals } = useSharedDataSync();
 
-  const myAmbulanceId = user?.ambulanceId || 'AMB-017';
+  // Use the ambulanceId from the logged-in user; fall back to AMB-001 for demo
+  const myAmbulanceId = user?.ambulanceId || 'AMB-001';
   const myAmbulance = ambulances.find(a => a.ambulanceId === myAmbulanceId);
-  const myEmergency = myAmbulance?.assignedEmergencyId ? emergencies.find(e => e.emergencyId === myAmbulance?.assignedEmergencyId && e.status !== 'COMPLETED') : null;
-  const recommendedHospital = myEmergency?.recommendedHospitalId ? hospitals.find(h => h.hospitalId === myEmergency.recommendedHospitalId) : null;
+
+  // Exact single source of truth for active emergency assigned to this ambulance
+  const activeEmergency = emergencies.find(
+    e => e.assignedAmbulanceId === myAmbulanceId && !['COMPLETED', 'CANCELLED'].includes(e.status)
+  );
+  const recommendedHospital = activeEmergency?.recommendedHospitalId
+    ? hospitals.find(h => h.hospitalId === activeEmergency.recommendedHospitalId)
+    : null;
 
   useEffect(() => {
     if (location.pathname.endsWith('/emergency')) {
@@ -65,13 +73,15 @@ export default function AmbulanceDashboard() {
   }, []);
 
   const handleStatusChange = (newStatus: EmergencyStatus) => {
-    if (myEmergency) {
-      emergencyService.updateEmergencyStatus(myEmergency.emergencyId, newStatus);
+    if (activeEmergency) {
+      emergencyService.updateEmergencyStatus(activeEmergency.emergencyId, newStatus, myAmbulanceId);
 
-      // Sync ambulance status loosely with emergency status
+      // Sync ambulance status with emergency status
       if (newStatus === 'COMPLETED') {
         ambulanceService.updateAmbulanceStatus(myAmbulanceId, 'AVAILABLE');
         ambulanceService.updateAmbulance(myAmbulanceId, { assignedEmergencyId: null });
+      } else if (newStatus === 'ARRIVED_AT_HOSPITAL') {
+        ambulanceService.updateAmbulanceStatus(myAmbulanceId, 'AT HOSPITAL');
       } else {
         ambulanceService.updateAmbulanceStatus(myAmbulanceId, 'EN ROUTE');
       }
@@ -79,22 +89,20 @@ export default function AmbulanceDashboard() {
   };
 
   const getActionButtons = () => {
-    if (!myEmergency) return [];
+    if (!activeEmergency) return [];
 
-    switch (myEmergency.status) {
+    switch (activeEmergency.status) {
       case 'ASSIGNED':
-        return [{ label: 'Accept Emergency', color: 'bg-blue-500 hover:bg-blue-600 text-white', action: () => handleStatusChange('ACCEPTED') }];
-      case 'ACCEPTED':
-        return [{ label: 'Start Navigation', color: 'bg-green-500 hover:bg-green-600 text-white', action: () => handleStatusChange('EN ROUTE TO PATIENT') }];
-      case 'EN ROUTE TO PATIENT':
-        return [{ label: 'Arrived at Patient', color: 'bg-green-600 hover:bg-green-700 text-white', action: () => handleStatusChange('ARRIVED AT PATIENT') }];
-      case 'ARRIVED AT PATIENT':
-        return [{ label: 'Patient Picked Up', color: 'bg-green-700 hover:bg-green-800 text-white', action: () => handleStatusChange('PATIENT PICKED UP') }];
-      case 'PATIENT PICKED UP':
-        return [{ label: 'En Route to Hospital', color: 'bg-purple-600 hover:bg-purple-700 text-white', action: () => handleStatusChange('EN ROUTE TO HOSPITAL') }];
-      case 'EN ROUTE TO HOSPITAL':
-        return [{ label: 'Arrived at Hospital', color: 'bg-purple-700 hover:bg-purple-800 text-white', action: () => handleStatusChange('ARRIVED AT HOSPITAL') }];
-      case 'ARRIVED AT HOSPITAL':
+        return [{ label: 'En Route to Patient', color: 'bg-blue-500 hover:bg-blue-600 text-white', action: () => handleStatusChange('EN_ROUTE_TO_PATIENT') }];
+      case 'EN_ROUTE_TO_PATIENT':
+        return [{ label: 'Arrived at Scene', color: 'bg-green-500 hover:bg-green-600 text-white', action: () => handleStatusChange('ARRIVED_AT_SCENE') }];
+      case 'ARRIVED_AT_SCENE':
+        return [{ label: 'Patient Picked Up', color: 'bg-green-600 hover:bg-green-700 text-white', action: () => handleStatusChange('PATIENT_PICKED_UP') }];
+      case 'PATIENT_PICKED_UP':
+        return [{ label: 'En Route to Hospital', color: 'bg-purple-600 hover:bg-purple-700 text-white', action: () => handleStatusChange('EN_ROUTE_TO_HOSPITAL') }];
+      case 'EN_ROUTE_TO_HOSPITAL':
+        return [{ label: 'Arrived at Hospital', color: 'bg-purple-700 hover:bg-purple-800 text-white', action: () => handleStatusChange('ARRIVED_AT_HOSPITAL') }];
+      case 'ARRIVED_AT_HOSPITAL':
         return [{ label: 'Complete Mission', color: 'bg-emerald-600 hover:bg-emerald-700 text-white', action: () => handleStatusChange('COMPLETED') }];
       default:
         return [];
@@ -175,21 +183,42 @@ export default function AmbulanceDashboard() {
         </div>
 
         {/* Card B: Active Emergency */}
-        <div ref={emergencyRef} className={`relative bg-[#12183d] border border-[rgba(255,255,255,0.08)] ${myEmergency ? 'border-l-4 border-l-red-500' : ''} rounded-2xl p-6 scroll-mt-6`}>
+        <div ref={emergencyRef} className={`relative bg-[#12183d] border border-[rgba(255,255,255,0.08)] ${activeEmergency ? 'border-l-4 border-l-red-500' : ''} rounded-2xl p-6 scroll-mt-6`}>
           <div className="flex items-start justify-between mb-3">
             <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold">Active Emergency</p>
-            {myEmergency && <StatusBadge status={myEmergency.severity} />}
+            {activeEmergency && <StatusBadge status={activeEmergency.severity} />}
           </div>
-          {myEmergency ? (
+          {activeEmergency ? (
             <>
-              <p className="text-pink-400 text-xl font-bold mb-1">{myEmergency.type}</p>
-              <p className="text-slate-200 text-sm mb-4">{myEmergency.pickupLocation}</p>
-              <div className="flex items-end gap-2 mb-4">
+              <p className="text-pink-400 text-xl font-bold mb-1">{activeEmergency.type}</p>
+              <p className="text-white font-mono text-xs font-medium mb-1">{activeEmergency.emergencyId}</p>
+              <p className="text-slate-200 text-sm mb-4">{activeEmergency.pickupLocation}</p>
+              <div className="flex items-end gap-2 mb-3">
                 <span className="text-slate-400 text-sm mb-1">Status:</span>
-                <span className="text-purple-300 font-bold font-mono">{myEmergency.status}</span>
+                <span className="text-purple-300 font-bold font-mono">{activeEmergency.status.replace(/_/g, ' ')}</span>
               </div>
+              {recommendedHospital && (
+                <div className="mb-3 space-y-1 bg-white/5 rounded-xl p-3 border border-white/5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Destination:</span>
+                    <span className="text-green-400 font-semibold">{recommendedHospital.name}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Hospital Status:</span>
+                    <span className={`font-mono font-bold ${
+                      activeEmergency.hospitalResponse === 'ACCEPTED' ? 'text-green-400' :
+                      activeEmergency.hospitalResponse === 'DECLINED' ? 'text-red-400' :
+                      'text-amber-400'
+                    }`}>
+                      {activeEmergency.hospitalResponse === 'ACCEPTED' ? 'READY TO RECEIVE' :
+                       activeEmergency.hospitalResponse === 'DECLINED' ? 'DECLINED / RE-ASSIGNING' :
+                       'WAITING FOR CONFIRMATION'}
+                    </span>
+                  </div>
+                </div>
+              )}
               <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
-                <p className="text-xs font-medium text-red-300">Notes: {myEmergency.notes || 'None'}</p>
+                <p className="text-xs font-medium text-red-300">Notes: {activeEmergency.notes || 'None'}</p>
               </div>
             </>
           ) : (
@@ -199,8 +228,8 @@ export default function AmbulanceDashboard() {
           )}
         </div>
 
-        {/* Card C: AI Hospital Recommendation */}
-        <div className={`relative overflow-hidden ${myEmergency && recommendedHospital ? 'bg-gradient-to-br from-purple-900/30 to-[#12183d]' : 'bg-[#12183d]'} border border-[rgba(255,255,255,0.08)] rounded-2xl p-6`}>
+        {/* Card C: Hospital Destination */}
+        <div className={`relative overflow-hidden ${activeEmergency && recommendedHospital ? 'bg-gradient-to-br from-purple-900/30 to-[#12183d]' : 'bg-[#12183d]'} border border-[rgba(255,255,255,0.08)] rounded-2xl p-6`}>
           <div className="flex items-start justify-between mb-3">
             <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold">AI Hospital Recommendation</p>
             <span className="text-xs bg-purple-600/30 text-purple-200 px-2.5 py-1 rounded-full font-mono font-semibold">AI</span>
@@ -231,29 +260,34 @@ export default function AmbulanceDashboard() {
               </div>
               <p className="text-green-400 font-bold text-sm border-t border-white/10 pt-3">{recommendation.confidence}% recommendation confidence</p>
             </>
-          ) : myEmergency && recommendedHospital ? (
-            <>
-              <p className="text-white text-xl font-bold mb-1">{recommendedHospital.name}</p>
-              <p className="text-slate-400 text-sm mb-4">{recommendedHospital.emergencyDepartmentStatus === 'AVAILABLE' ? 'Emergency Dept Available' : 'Emergency Dept Busy'}</p>
-              <div className="space-y-2 mb-4">
-                {[
-                  { label: 'Emergency Dept', ok: recommendedHospital.emergencyDepartmentStatus !== 'FULL' },
-                  { label: 'ICU', ok: recommendedHospital.icuAvailable > 0 },
-                  { label: 'General Beds', ok: recommendedHospital.availableBeds > 0 },
-                ].map(r => (
-                  <div key={r.label} className="flex items-center justify-between text-sm">
-                    <span className="text-slate-300 flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${r.ok ? 'bg-green-400' : 'bg-amber-400'}`} />
-                      {r.label}
-                    </span>
-                    <div className="flex-1 mx-3 h-1.5 rounded-full bg-white/10 overflow-hidden">
-                      <div className={`h-full rounded-full ${r.ok ? 'bg-green-400 w-[90%]' : 'bg-amber-400 w-[30%]'}`} />
+          ) : activeEmergency && recommendedHospital ? (() => {
+            const hDetails = hospitalService.getHospitalCapacityDetails(recommendedHospital);
+            return (
+              <>
+                <p className="text-white text-xl font-bold mb-1">{recommendedHospital.name}</p>
+                <p className="text-slate-400 text-sm mb-4">{hDetails.overallStatus === 'AVAILABLE' ? 'Emergency Dept Available' : hDetails.overallStatus === 'BUSY' ? 'Emergency Dept Busy' : 'Emergency Dept Full'}</p>
+                <div className="space-y-2 mb-4">
+                  {[
+                    { label: 'Emergency Dept', ok: hDetails.emergencyDept.status !== 'FULL' },
+                    { label: 'ICU', ok: hDetails.icu.available > 0 },
+                    { label: 'General Beds', ok: hDetails.generalBeds.available > 0 },
+                    { label: 'Trauma Unit', ok: hDetails.trauma.status !== 'FULL' },
+                    { label: 'Cardiac Unit', ok: hDetails.cardiac.status !== 'FULL' },
+                  ].map(r => (
+                    <div key={r.label} className="flex items-center justify-between text-sm">
+                      <span className="text-slate-300 flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${r.ok ? 'bg-green-400' : 'bg-amber-400'}`} />
+                        {r.label}
+                      </span>
+                      <div className="flex-1 mx-3 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div className={`h-full rounded-full ${r.ok ? 'bg-green-400 w-[90%]' : 'bg-amber-400 w-[30%]'}`} />
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
+                  ))}
+                </div>
+              </>
+            );
+          })() : (
              <div className="flex flex-col items-center justify-center h-40">
                <p className="text-amber-300 text-sm">Hospital recommendation unavailable. Contact dispatch.</p>
              </div>
@@ -266,8 +300,8 @@ export default function AmbulanceDashboard() {
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <div>
             <p className="text-white font-bold text-lg">Live Navigation</p>
-            {myEmergency && (
-              <p className="text-purple-300 text-sm">Destination: {myEmergency.pickupLocation}</p>
+            {activeEmergency && (
+              <p className="text-purple-300 text-sm">Destination: {recommendedHospital?.name || activeEmergency.pickupLocation}</p>
             )}
           </div>
           <div className="flex gap-2">

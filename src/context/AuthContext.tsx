@@ -12,6 +12,7 @@ export interface User {
   employeeId: string;
   department?: string;
   ambulanceId?: string;
+  hospitalId?: string;
   dispatchCenter?: string;
   status: 'active' | 'pending' | 'disabled';
 }
@@ -33,6 +34,7 @@ export interface SignupData {
   organization: string;
   employeeId?: string;
   ambulanceId?: string;
+  hospitalId?: string;
   dispatchCenter?: string;
   department?: string;
 }

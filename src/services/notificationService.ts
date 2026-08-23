@@ -7,12 +7,26 @@ export const notificationService = {
     return storageService.getItem<Notification[]>(STORAGE_KEYS.NOTIFICATIONS) || [];
   },
 
-  addNotification: (data: Omit<Notification, 'id' | 'timestamp'>): Notification => {
+  addNotification: (data: Omit<Notification, 'id' | 'timestamp' | 'read'>): Notification => {
     const notifications = notificationService.getNotifications();
     
+    // Check if identical notification was recently added (within last 3 seconds) to prevent duplicates
+    const now = Date.now();
+    const isDuplicate = notifications.some(n => 
+      n.title === data.title &&
+      n.emergencyId === data.emergencyId &&
+      n.targetRole === data.targetRole &&
+      (now - new Date(n.timestamp).getTime()) < 3000
+    );
+
+    if (isDuplicate) {
+      return notifications[0];
+    }
+
     const newNotification: Notification = {
-      id: `NOTIF-${Date.now()}`,
+      id: `NOTIF-${now}-${Math.random().toString(36).substr(2, 5)}`,
       timestamp: new Date().toISOString(),
+      read: false,
       ...data
     };
 
@@ -25,6 +39,15 @@ export const notificationService = {
     
     storageService.setItem(STORAGE_KEYS.NOTIFICATIONS, notifications);
     return newNotification;
+  },
+
+  markAsRead: (id: string): void => {
+    const notifications = notificationService.getNotifications();
+    const index = notifications.findIndex(n => n.id === id);
+    if (index !== -1) {
+      notifications[index].read = true;
+      storageService.setItem(STORAGE_KEYS.NOTIFICATIONS, notifications);
+    }
   },
   
   clearNotifications: (): void => {

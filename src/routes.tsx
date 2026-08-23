@@ -13,6 +13,7 @@ import HospitalDashboard from './pages/hospital/Dashboard';
 import Profile from './pages/Profile';
 import Notifications from './pages/Notifications';
 import AccessDenied from './pages/AccessDenied';
+import EmergencyBackgroundLayout from './layouts/EmergencyBackgroundLayout';
 
 function RequireRole({ role }: { role: string }) {
   const { user } = useAuth();
@@ -36,11 +37,16 @@ function RoleRedirect() {
 }
 
 export const router = createBrowserRouter([
-  { path: '/', element: <Landing /> },
-  { path: '/login', element: <Login /> },
-  { path: '/signup', element: <SignUp /> },
-  { path: '/forgot-password', element: <ForgotPassword /> },
-  { path: '/reset-password', element: <ResetPassword /> },
+  {
+    element: <EmergencyBackgroundLayout />,
+    children: [
+      { path: '/', element: <Landing /> },
+      { path: '/login', element: <Login /> },
+      { path: '/signup', element: <SignUp /> },
+      { path: '/forgot-password', element: <ForgotPassword /> },
+      { path: '/reset-password', element: <ResetPassword /> },
+    ],
+  },
   { path: '/dashboard', element: <RoleRedirect /> },
 
   // Ambulance Crew routes

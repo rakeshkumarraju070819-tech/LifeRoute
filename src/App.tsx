@@ -3,6 +3,7 @@ import { RouterProvider } from 'react-router';
 import { AuthProvider } from './context/AuthContext';
 import { router } from './routes';
 import { initializeSeedData } from './data/seedData';
+import { STORAGE_KEYS } from './data/constants';
 
 export default function App() {
   useEffect(() => {
@@ -11,8 +12,10 @@ export default function App() {
 
   const handleReset = () => {
     if (window.confirm('Reset all demo data?')) {
+      // Clear using the actual keys the app uses
+      Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
       initializeSeedData(true);
-      window.location.reload(); // Force reload to refresh all states
+      window.location.reload();
     }
   };
 

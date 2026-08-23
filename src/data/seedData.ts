@@ -47,12 +47,25 @@ export const SEED_HOSPITALS: Hospital[] = [
     location: { lat: 40.7300, lng: -73.9950 },
     emergencyDepartmentStatus: 'AVAILABLE',
     totalBeds: 500,
-    availableBeds: 120,
     occupiedBeds: 380,
+    reservedBeds: 0,
+    availableBeds: 120,
     icuTotal: 50,
+    icuOccupied: 35,
+    icuReserved: 0,
     icuAvailable: 15,
     emergencyBeds: 30,
-    emergencyBedsAvailable: 8
+    emergencyBedsOccupied: 22,
+    emergencyBedsReserved: 0,
+    emergencyBedsAvailable: 8,
+    traumaTotal: 4,
+    traumaOccupied: 2,
+    traumaReserved: 0,
+    traumaAvailable: 2,
+    cardiacTotal: 6,
+    cardiacOccupied: 3,
+    cardiacReserved: 0,
+    cardiacAvailable: 3,
   },
   {
     hospitalId: 'HOSP-002',
@@ -60,12 +73,25 @@ export const SEED_HOSPITALS: Hospital[] = [
     location: { lat: 40.7400, lng: -73.9800 },
     emergencyDepartmentStatus: 'BUSY',
     totalBeds: 300,
-    availableBeds: 45,
     occupiedBeds: 255,
+    reservedBeds: 0,
+    availableBeds: 45,
     icuTotal: 30,
+    icuOccupied: 25,
+    icuReserved: 0,
     icuAvailable: 5,
     emergencyBeds: 20,
-    emergencyBedsAvailable: 2
+    emergencyBedsOccupied: 18,
+    emergencyBedsReserved: 0,
+    emergencyBedsAvailable: 2,
+    traumaTotal: 4,
+    traumaOccupied: 2,
+    traumaReserved: 0,
+    traumaAvailable: 2,
+    cardiacTotal: 6,
+    cardiacOccupied: 3,
+    cardiacReserved: 0,
+    cardiacAvailable: 3,
   },
   {
     hospitalId: 'HOSP-003',
@@ -73,12 +99,25 @@ export const SEED_HOSPITALS: Hospital[] = [
     location: { lat: 40.7500, lng: -73.9700 },
     emergencyDepartmentStatus: 'FULL',
     totalBeds: 400,
-    availableBeds: 10,
     occupiedBeds: 390,
+    reservedBeds: 0,
+    availableBeds: 10,
     icuTotal: 40,
+    icuOccupied: 40,
+    icuReserved: 0,
     icuAvailable: 0,
     emergencyBeds: 25,
-    emergencyBedsAvailable: 0
+    emergencyBedsOccupied: 25,
+    emergencyBedsReserved: 0,
+    emergencyBedsAvailable: 0,
+    traumaTotal: 4,
+    traumaOccupied: 4,
+    traumaReserved: 0,
+    traumaAvailable: 0,
+    cardiacTotal: 6,
+    cardiacOccupied: 6,
+    cardiacReserved: 0,
+    cardiacAvailable: 0,
   }
 ];
 
@@ -92,12 +131,17 @@ export const SEED_EMERGENCIES: Emergency[] = [
     longitude: -74.0160,
     assignedAmbulanceId: 'AMB-003',
     recommendedHospitalId: 'HOSP-001',
-    status: 'EN ROUTE TO PATIENT',
+    status: 'EN_ROUTE_TO_PATIENT',
     eta: '5 mins',
     notes: 'Multiple vehicle collision. Proceed with caution.',
     createdAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(), // 15 mins ago
     updatedAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-    bedReserved: true
+    bedReserved: true,
+    hospitalResponse: 'WAITING',
+    statusHistory: [
+      { status: 'ASSIGNED', timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(), updatedBy: 'System' },
+      { status: 'EN_ROUTE_TO_PATIENT', timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(), updatedBy: 'System' }
+    ]
   },
   {
     emergencyId: 'EM-0999',
@@ -108,12 +152,19 @@ export const SEED_EMERGENCIES: Emergency[] = [
     longitude: -73.9960,
     assignedAmbulanceId: 'AMB-004',
     recommendedHospitalId: 'HOSP-001',
-    status: 'ARRIVED AT HOSPITAL',
+    status: 'ARRIVED_AT_HOSPITAL',
     eta: '0 mins',
     notes: 'Patient unresponsive.',
     createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(), // 45 mins ago
     updatedAt: new Date(Date.now() - 1000 * 60 * 1).toISOString(),
-    bedReserved: true
+    bedReserved: true,
+    hospitalResponse: 'ACCEPTED',
+    hospitalAcceptedAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+    hospitalAcceptedBy: 'HOSP-001',
+    statusHistory: [
+      { status: 'ASSIGNED', timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString(), updatedBy: 'System' },
+      { status: 'ARRIVED_AT_HOSPITAL', timestamp: new Date(Date.now() - 1000 * 60 * 1).toISOString(), updatedBy: 'System' }
+    ]
   }
 ];
 
