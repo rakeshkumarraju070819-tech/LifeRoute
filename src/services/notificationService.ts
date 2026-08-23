@@ -10,7 +10,6 @@ export const notificationService = {
   addNotification: (data: Omit<Notification, 'id' | 'timestamp' | 'read'>): Notification => {
     const notifications = notificationService.getNotifications();
     
-<<<<<<< HEAD
     // Check if identical notification was recently added (within last 3 seconds) to prevent duplicates
     const now = Date.now();
     const isDuplicate = notifications.some(n => 
@@ -24,15 +23,9 @@ export const notificationService = {
       return notifications[0];
     }
 
+    // Combine Date.now() with random suffix to ensure uniquely keyed entries
     const newNotification: Notification = {
-      id: `NOTIF-${now}-${Math.random().toString(36).substr(2, 5)}`,
-=======
-    // Date.now() alone collides when multiple notifications fire in the same
-    // millisecond (common — several services call this synchronously back to
-    // back), producing duplicate ids and breaking React list keys downstream.
-    const newNotification: Notification = {
-      id: `NOTIF-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
->>>>>>> 1894b982d9894161717988ebf1f9a44cbaa2fff6
+      id: `NOTIF-${now}-${Math.random().toString(36).slice(2, 8)}`,
       timestamp: new Date().toISOString(),
       read: false,
       ...data

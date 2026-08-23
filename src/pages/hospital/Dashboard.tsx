@@ -19,17 +19,8 @@ export default function HospitalDashboard() {
 
   const { hospitals, emergencies } = useSharedDataSync();
 
-<<<<<<< HEAD
-  useEffect(() => {
-    console.log('[SYNC] Hospital updated');
-  }, [hospitals, emergencies]);
-
   // Use the hospitalId from the logged-in user; fall back to HOSP-001 for demo
   const myHospitalId = user?.hospitalId || 'HOSP-001';
-=======
-  // Assuming logged-in user belongs to City General Hospital for demo
-  const myHospitalId = 'HOSP-001'; 
->>>>>>> 1894b982d9894161717988ebf1f9a44cbaa2fff6
   const myHospital = hospitals.find(h => h.hospitalId === myHospitalId);
 
   const [hospitalStatus, setHospitalStatus] = useState<string>('AVAILABLE');
@@ -38,11 +29,6 @@ export default function HospitalDashboard() {
   useEffect(() => {
     if (myHospital) setHospitalStatus(myHospital.emergencyDepartmentStatus);
   }, [myHospital?.emergencyDepartmentStatus]);
-
-  // Sync local hospital status state when shared data changes
-  useEffect(() => {
-    if (myHospital) setHospitalStatus(myHospital.emergencyDepartmentStatus);
-  }, [myHospital]);
 
   // Show any emergency assigned to this hospital that isn't completed/cancelled
   const incomingEmergencies = emergencies.filter(e =>
@@ -95,19 +81,11 @@ export default function HospitalDashboard() {
   const details = hospitalService.getHospitalCapacityDetails(myHospital);
 
   const capacity = {
-<<<<<<< HEAD
     'General Beds': { avail: details.generalBeds.available, total: details.generalBeds.total, status: details.generalBeds.status, pct: details.generalBeds.pct },
     'ICU Beds': { avail: details.icu.available, total: details.icu.total, status: details.icu.status, pct: details.icu.pct },
     'Emergency Dept': { avail: details.emergencyDept.available, total: details.emergencyDept.total, status: details.emergencyDept.status, pct: details.emergencyDept.pct },
     'Trauma Unit': { avail: details.trauma.available, total: details.trauma.total, status: details.trauma.status, pct: details.trauma.pct },
     'Cardiac Unit': { avail: details.cardiac.available, total: details.cardiac.total, status: details.cardiac.status, pct: details.cardiac.pct },
-=======
-    'General Beds': { avail: myHospital.availableBeds, total: myHospital.totalBeds, status: getStatus(generalPct), pct: generalPct },
-    'ICU Beds': { avail: myHospital.icuAvailable, total: myHospital.icuTotal, status: getStatus(icuPct), pct: icuPct },
-    'Emergency Dept': { avail: myHospital.emergencyBedsAvailable, total: myHospital.emergencyBeds || 30, status: getStatus(emergencyPct), pct: emergencyPct },
-    'Trauma Unit': { avail: myHospital.emergencyBedsAvailable > 0 ? 2 : 0, total: 4, status: getStatus(myHospital.emergencyBedsAvailable > 0 ? 0.5 : 0), pct: myHospital.emergencyBedsAvailable > 0 ? 0.5 : 0 },
-    'Cardiac Unit': { avail: myHospital.icuAvailable > 0 ? 3 : 0, total: 6, status: getStatus(myHospital.icuAvailable > 0 ? 0.5 : 0), pct: myHospital.icuAvailable > 0 ? 0.5 : 0 },
->>>>>>> 1894b982d9894161717988ebf1f9a44cbaa2fff6
   };
 
   const handleAccept = (em: any) => {
