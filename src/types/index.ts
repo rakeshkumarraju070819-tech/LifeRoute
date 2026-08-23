@@ -1,12 +1,12 @@
 export type EmergencyStatus = 
   | 'ASSIGNED'
-  | 'ACCEPTED'
-  | 'EN ROUTE TO PATIENT'
-  | 'ARRIVED AT PATIENT'
-  | 'PATIENT PICKED UP'
-  | 'EN ROUTE TO HOSPITAL'
-  | 'ARRIVED AT HOSPITAL'
-  | 'COMPLETED';
+  | 'EN_ROUTE_TO_PATIENT'
+  | 'ARRIVED_AT_SCENE'
+  | 'PATIENT_PICKED_UP'
+  | 'EN_ROUTE_TO_HOSPITAL'
+  | 'ARRIVED_AT_HOSPITAL'
+  | 'COMPLETED'
+  | 'CANCELLED';
 
 export type AmbulanceStatus = 
   | 'AVAILABLE'
@@ -39,10 +39,29 @@ export interface Hospital {
   totalBeds: number;
   availableBeds: number;
   occupiedBeds: number;
+  reservedBeds?: number;
   icuTotal: number;
   icuAvailable: number;
+  icuOccupied: number;
+  icuReserved?: number;
   emergencyBeds: number;
   emergencyBedsAvailable: number;
+  emergencyBedsOccupied?: number;
+  emergencyBedsReserved?: number;
+  traumaTotal?: number;
+  traumaAvailable?: number;
+  traumaOccupied?: number;
+  traumaReserved?: number;
+  cardiacTotal?: number;
+  cardiacAvailable?: number;
+  cardiacOccupied?: number;
+  cardiacReserved?: number;
+}
+
+export interface StatusHistoryEntry {
+  status: EmergencyStatus;
+  timestamp: string;
+  updatedBy: string;
 }
 
 export interface Emergency {
@@ -60,12 +79,20 @@ export interface Emergency {
   createdAt: string;
   updatedAt: string;
   bedReserved: boolean;
+  hospitalResponse?: 'WAITING' | 'ACCEPTED' | 'DECLINED';
+  hospitalAcceptedAt?: string;
+  hospitalAcceptedBy?: string;
+  statusHistory?: StatusHistoryEntry[];
 }
 
 export interface Notification {
   id: string;
+  title: string;
   message: string;
   timestamp: string;
   type: 'info' | 'warning' | 'success' | 'error';
-  targetPortal?: 'dispatcher' | 'crew' | 'hospital';
+  emergencyId?: string;
+  targetRole?: 'DISPATCHER' | 'CREW' | 'HOSPITAL';
+  targetUserId?: string;
+  read: boolean;
 }

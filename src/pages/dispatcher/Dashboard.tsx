@@ -8,6 +8,7 @@ import TomTomMap from '../../components/TomTomMap';
 import { useSharedDataSync } from '../../hooks/useSharedDataSync';
 import { emergencyService } from '../../services/emergencyService';
 import { ambulanceService } from '../../services/ambulanceService';
+import { hospitalService } from '../../services/hospitalService';
 
 const SEVERITY_COLOR: Record<string, string> = {
   CRITICAL: 'text-red-400 font-bold',
@@ -29,6 +30,7 @@ export default function DispatcherDashboard() {
   const [filterSeverity, setFilterSeverity] = useState('ALL');
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   // unified data layer
   const { emergencies, ambulances, hospitals } = useSharedDataSync();
@@ -38,17 +40,18 @@ export default function DispatcherDashboard() {
   const [formSeverity, setFormSeverity] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'>('CRITICAL');
   const [formLocation, setFormLocation] = useState('');
   const [formAmbulanceId, setFormAmbulanceId] = useState('');
+  const [formHospitalId, setFormHospitalId] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [createError, setCreateError] = useState('');
   const [createLoading, setCreateLoading] = useState(false);
 
   const hospitalsRef = useRef<HTMLDivElement>(null);
 
-  const activeEmergenciesCount = emergencies.filter(e => e.status !== 'COMPLETED').length;
-  const availableAmbulancesCount = ambulances.filter(a => a.status === 'AVAILABLE').length;
-  const activeAmbulancesCount = ambulances.filter(a => ['ASSIGNED', 'ACCEPTED', 'EN ROUTE', 'AT HOSPITAL'].includes(a.status)).length;
-  const hospitalsAvailableCount = hospitals.filter(h => h.emergencyDepartmentStatus === 'AVAILABLE').length;
-  const criticalEmergenciesCount = emergencies.filter(e => e.status !== 'COMPLETED' && e.severity === 'CRITICAL').length;
+  const activeEmergenciesCount = emergencies.filter(e => e.status !== 'COMPLETED' && e.status !== 'CANCELLED').length;
+  const availableAmbulancesCount = ambulances.filter(a => ambulanceService.isAmbulanceAvailable(a.ambulanceId, emergencies)).length;
+  const activeAmbulancesCount = ambulances.filter(a => !ambulanceService.isAmbulanceAvailable(a.ambulanceId, emergencies)).length;
+  const hospitalsAvailableCount = hospitals.filter(h => hospitalService.getHospitalCapacityDetails(h).overallStatus === 'AVAILABLE').length;
+  const criticalEmergenciesCount = emergencies.filter(e => e.status !== 'COMPLETED' && e.status !== 'CANCELLED' && e.severity === 'CRITICAL').length;
 
   useEffect(() => {
     setTab(tabForPath(location.pathname));
@@ -58,24 +61,33 @@ export default function DispatcherDashboard() {
   }, [location.pathname]);
 
   const filteredEM = emergencies.filter(e => {
+    // By default hide completed/cancelled (history)
+    if (!showHistory && (e.status === 'COMPLETED' || e.status === 'CANCELLED')) return false;
     if (filterSeverity !== 'ALL' && e.severity !== filterSeverity) return false;
-    if (search && !e.emergencyId.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !e.emergencyId.toLowerCase().includes(search.toLowerCase()) &&
+        !e.type.toLowerCase().includes(search.toLowerCase()) &&
+        !e.pickupLocation.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
-  const availableAmbulanceOptions = ambulances.filter(a => a.status === 'AVAILABLE');
-
   const handleDispatch = async () => {
     if (!formLocation) return alert('Please specify a pickup location.');
+    if (formAmbulanceId) {
+      const active = emergencies.find(
+        e => e.assignedAmbulanceId === formAmbulanceId && !['COMPLETED', 'CANCELLED'].includes(e.status)
+      );
+      if (active) {
+        setCreateError(`${formAmbulanceId} is currently busy with ${active.emergencyId}.`);
+        return;
+      }
+    }
     try {
       setCreateLoading(true);
-      // Recommend a hospital before creating so it's set from the start,
-      // rather than always landing as null on newly created emergencies.
-      const recommendedHospitalId = emergencyService.getRecommendedHospital(
-        { severity: formSeverity } as any,
-        hospitals
-      );
-      // createEmergency/assignAmbulance are synchronous — no await needed.
+      setCreateError('');
+      // If the dispatcher left "Assign Hospital" on its default, fall back
+      // to an auto-recommendation rather than always leaving it null.
+      const recommendedHospitalId =
+        formHospitalId || emergencyService.getRecommendedHospital({ severity: formSeverity } as any, hospitals);
       const emergency = emergencyService.createEmergency({
         type: formType,
         severity: formSeverity,
@@ -93,6 +105,7 @@ export default function DispatcherDashboard() {
       setFormSeverity('CRITICAL');
       setFormLocation('');
       setFormAmbulanceId('');
+      setFormHospitalId('');
       setFormNotes('');
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : 'Unable to create emergency.');
@@ -129,8 +142,8 @@ export default function DispatcherDashboard() {
 
       {tab === 'overview' && (
         <div className="space-y-6">
-          <div className="flex items-center gap-3">
-            <input value={search} onChange={e => setSearch(e.target.value)} className="bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 w-48" placeholder="Search ID…" />
+          <div className="flex items-center gap-3 flex-wrap">
+            <input value={search} onChange={e => setSearch(e.target.value)} className="bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 w-56" placeholder="Search ID, type, location…" />
             <select value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)} className="bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400">
               <option value="ALL">All Severities</option>
               <option value="CRITICAL">Critical</option>
@@ -138,6 +151,13 @@ export default function DispatcherDashboard() {
               <option value="MEDIUM">Medium</option>
               <option value="LOW">Low</option>
             </select>
+            <button
+              onClick={() => setShowHistory(h => !h)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors border ${showHistory ? 'bg-purple-600 text-white border-purple-500' : 'border-white/10 text-slate-400 hover:text-white hover:bg-white/5'}`}
+            >
+              {showHistory ? '🕐 Hiding History' : '🕐 Show History'}
+            </button>
+            <span className="text-xs text-slate-500 font-mono">{filteredEM.length} shown</span>
           </div>
           <div className="bg-[#12183d] rounded-2xl overflow-x-auto">
             <table className="w-full text-sm">
@@ -150,7 +170,8 @@ export default function DispatcherDashboard() {
               </thead>
               <tbody className="divide-y divide-white/5">
                 {filteredEM.map(e => {
-                  const recHospital = e.recommendedHospitalId ? hospitals.find(h => h.hospitalId === e.recommendedHospitalId)?.name : '—';
+                  const hospObj = e.recommendedHospitalId ? hospitals.find(h => h.hospitalId === e.recommendedHospitalId) : null;
+                  const recHospital = hospObj ? hospObj.name : '—';
                   const time = new Date(e.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                   return (
                     <tr key={e.emergencyId} className="hover:bg-white/5 transition-colors">
@@ -161,7 +182,18 @@ export default function DispatcherDashboard() {
                       <td className="px-4 py-3 font-mono text-xs text-purple-300">{e.assignedAmbulanceId || '—'}</td>
                       <td className="px-4 py-3"><StatusBadge status={e.status} /></td>
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-200">{e.eta}</td>
-                      <td className="px-4 py-3 text-slate-400 text-xs">{recHospital}</td>
+                      <td className="px-4 py-3 text-xs">
+                        <span className="text-slate-300">{recHospital}</span>
+                        {e.hospitalResponse && (
+                          <span className={`block font-mono text-[10px] ${
+                            e.hospitalResponse === 'ACCEPTED' ? 'text-green-400' :
+                            e.hospitalResponse === 'DECLINED' ? 'text-red-400' :
+                            'text-amber-400'
+                          }`}>
+                            {e.hospitalResponse === 'ACCEPTED' ? '• READY/ACCEPTED' : `• ${e.hospitalResponse}`}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-500">{time}</td>
                     </tr>
                   );
@@ -221,22 +253,27 @@ export default function DispatcherDashboard() {
         <p className="text-xs uppercase tracking-widest text-purple-400 font-semibold mb-4">Hospital Network Status</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {hospitals.map(h => {
-            const incoming = emergencies.filter(e => e.recommendedHospitalId === h.hospitalId && e.status === 'EN ROUTE TO HOSPITAL');
-            const incomingText = incoming.length > 0 ? `${incoming[0].assignedAmbulanceId} · ${incoming[0].eta}` : 'None';
+            const details = hospitalService.getHospitalCapacityDetails(h);
+            const incomingText = hospitalService.getHospitalIncomingText(h.hospitalId, emergencies);
             return (
               <div key={h.hospitalId} className="bg-[#12183d] rounded-2xl p-6 border border-white/5">
                 <p className="text-white font-bold text-sm mb-3">{h.name}</p>
                 <div className="space-y-1.5 text-xs">
                   {[
-                    { k: 'Emergency Dept', v: h.emergencyDepartmentStatus },
-                    { k: 'ICU', v: `${h.icuAvailable}/${h.icuTotal}` },
-                    { k: 'General Beds', v: `${h.availableBeds}/${h.totalBeds}` },
-                    { k: 'Trauma', v: h.emergencyBedsAvailable > 0 ? 'AVAILABLE' : 'FULL' },
-                    { k: 'Cardiac', v: 'AVAILABLE' },
+                    { k: 'Emergency Dept', v: details.emergencyDept.status },
+                    { k: 'ICU', v: details.icu.text },
+                    { k: 'General Beds', v: details.generalBeds.text },
+                    { k: 'Trauma', v: details.trauma.status },
+                    { k: 'Cardiac', v: details.cardiac.status },
                   ].map(r => (
                     <div key={r.k} className="flex justify-between">
                       <span className="text-slate-400">{r.k}</span>
-                      <span className={`font-mono font-medium ${r.v.includes('AVAILABLE') ? 'text-green-400' : (r.v === 'BUSY' || r.v === 'LIMITED' || r.v === 'FULL') ? 'text-amber-400' : 'text-slate-200'}`}>{r.v}</span>
+                      <span className={`font-mono font-medium ${
+                        r.v === 'AVAILABLE' ? 'text-green-400' :
+                        (r.v === 'BUSY' || r.v === 'LIMITED') ? 'text-amber-400' :
+                        r.v === 'FULL' ? 'text-red-400' :
+                        'text-slate-200'
+                      }`}>{r.v}</span>
                     </div>
                   ))}
                   <div className="flex justify-between pt-1 border-t border-white/5">
@@ -286,11 +323,36 @@ export default function DispatcherDashboard() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">Assign Ambulance</label>
-                  <select value={formAmbulanceId} onChange={e => setFormAmbulanceId(e.target.value)} className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400">
+                  <select value={formAmbulanceId} onChange={e => {
+                    setFormAmbulanceId(e.target.value);
+                    setCreateError('');
+                  }} className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400">
                     <option value="">-- None (Assign Later) --</option>
-                    {availableAmbulanceOptions.map(a => (
-                      <option key={a.ambulanceId} value={a.ambulanceId}>{a.ambulanceId} — Available · {a.station}</option>
-                    ))}
+                    {ambulances.map(a => {
+                      const active = emergencies.find(
+                        e => e.assignedAmbulanceId === a.ambulanceId && !['COMPLETED', 'CANCELLED'].includes(e.status)
+                      );
+                      const isBusy = !!active || a.status === 'OFF DUTY';
+                      return (
+                        <option key={a.ambulanceId} value={a.ambulanceId} disabled={isBusy}>
+                          {a.ambulanceId} — {isBusy ? `BUSY • ${active?.emergencyId || a.status}` : 'AVAILABLE'} · {a.station}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Assign Hospital</label>
+                  <select value={formHospitalId} onChange={e => setFormHospitalId(e.target.value)} className="w-full bg-[#0d1530] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400">
+                    <option value="">-- None (Assign Later) --</option>
+                    {hospitals.filter(h => hospitalService.getHospitalCapacityDetails(h).overallStatus !== 'FULL').map(h => {
+                      const d = hospitalService.getHospitalCapacityDetails(h);
+                      return (
+                        <option key={h.hospitalId} value={h.hospitalId}>
+                          {h.name} — {d.overallStatus} · ICU {d.icu.text}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>

@@ -7,6 +7,7 @@ import {
 import { useAuth, type Role } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSharedDataSync } from '../hooks/useSharedDataSync';
+import { notificationService } from '../services/notificationService';
 
 const NAV: Record<Role, { label: string; icon: typeof LayoutGrid; path: string }[]> = {
   AMBULANCE_CREW: [
@@ -49,16 +50,29 @@ export default function DashboardLayout() {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [connected] = useState(true);
+  const [showNotifications, setShowNotifications] = useState(false);
   const { notifications } = useSharedDataSync();
-  const notifCount = notifications.length;
 
   if (!user) return null;
   const nav = NAV[user.role];
-  const notificationsPath = `/${user.role === 'AMBULANCE_CREW' ? 'crew' : user.role === 'DISPATCHER' ? 'dispatcher' : 'hospital'}/notifications`;
 
   const handleLogout = () => {
     logout();
     navigate('/');
+  };
+
+  const mapRole = (r: Role) => {
+    if (r === 'AMBULANCE_CREW') return 'CREW';
+    if (r === 'HOSPITAL_STAFF') return 'HOSPITAL';
+    return 'DISPATCHER';
+  };
+
+  const myNotifications = notifications.filter(n => !n.targetRole || n.targetRole === mapRole(user.role)).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const unreadCount = myNotifications.filter(n => !n.read).length;
+
+  const handleMarkRead = (id: string) => {
+    notificationService.markAsRead(id);
+    window.dispatchEvent(new Event('local-storage-update'));
   };
 
   return (
@@ -144,17 +158,51 @@ export default function DashboardLayout() {
             )}
           </div>
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => navigate(notificationsPath)}
-              className="relative text-secondary hover:text-primary transition-colors"
-            >
-              <Bell className="w-5 h-5" strokeWidth={1.75} />
-              {notifCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-critical text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                  {notifCount > 99 ? '99+' : notifCount}
-                </span>
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="relative text-secondary hover:text-primary transition-colors"
+              >
+                <Bell className="w-5 h-5" strokeWidth={1.75} />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-critical text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <div className="absolute right-0 mt-2 w-80 bg-surface-panel-raised border border-hairline-strong rounded-xl shadow-2xl z-50 overflow-hidden">
+                  <div className="bg-surface-sunken border-b border-hairline px-4 py-3 flex justify-between items-center">
+                    <p className="text-primary font-bold text-sm">Notifications</p>
+                    <button onClick={() => {
+                      myNotifications.forEach(n => handleMarkRead(n.id));
+                    }} className="text-xs text-operational hover:opacity-80">Mark all read</button>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto">
+                    {myNotifications.length === 0 ? (
+                      <p className="text-center text-tertiary text-sm py-8">No notifications</p>
+                    ) : (
+                      <div className="divide-y divide-[var(--color-border-hairline)]">
+                        {myNotifications.map(n => (
+                          <div
+                            key={n.id}
+                            onClick={() => handleMarkRead(n.id)}
+                            className={`p-4 cursor-pointer hover:bg-surface-sunken transition-colors ${!n.read ? 'bg-operational-bg' : ''}`}
+                          >
+                            <div className="flex justify-between items-start mb-1">
+                              <p className={`text-sm font-medium ${!n.read ? 'text-primary' : 'text-secondary'}`}>{n.title || n.type.toUpperCase()}</p>
+                              <span className="text-[10px] text-tertiary font-mono">{new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                            <p className="text-xs text-secondary line-clamp-2">{n.message}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
-            </button>
+            </div>
             <div className="flex items-center gap-2 text-sm">
               <div className="w-8 h-8 rounded-full bg-operational-bg border border-operational flex items-center justify-center text-operational font-semibold text-xs">
                 {user.name.split(' ').map(n => n[0]).join('')}

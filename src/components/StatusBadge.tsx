@@ -30,7 +30,7 @@ export default function StatusBadge({ status, variant = 'auto', size = 'sm' }: S
       className={`inline-flex items-center rounded font-mono font-medium uppercase tracking-wide ${sz}`}
       style={{ color: style.color, backgroundColor: style.bg, boxShadow: `inset 0 0 0 1px ${style.color}33` }}
     >
-      {status}
+      {status.replace(/_/g, ' ')}
     </span>
   );
 }

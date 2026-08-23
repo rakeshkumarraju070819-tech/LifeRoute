@@ -2,6 +2,8 @@ import { Emergency, EmergencyStatus, Hospital } from '../types';
 import { STORAGE_KEYS } from '../data/constants';
 import { storageService } from './storageService';
 import { notificationService } from './notificationService';
+import { ambulanceService } from './ambulanceService';
+import { hospitalService } from './hospitalService';
 
 export const emergencyService = {
   getEmergencies: (): Emergency[] => {
@@ -13,18 +15,54 @@ export const emergencyService = {
     return emergencies.find(e => e.emergencyId === id);
   },
 
+  /** Generate next sequential unique ID by inspecting highest numeric suffix */
+  getNextEmergencyId: (): string => {
+    const emergencies = emergencyService.getEmergencies();
+    let maxNum = 999;
+    emergencies.forEach(e => {
+      const match = e.emergencyId.match(/^EM-(\d+)$/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    });
+    return `EM-${maxNum + 1}`;
+  },
+
+  /** Get the single active emergency for a specific ambulance (or undefined) */
+  getActiveEmergencyForAmbulance: (ambulanceId: string): Emergency | undefined => {
+    const emergencies = emergencyService.getEmergencies();
+    return emergencies.find(
+      e => e.assignedAmbulanceId === ambulanceId && !['COMPLETED', 'CANCELLED'].includes(e.status)
+    );
+  },
+
+  /** Get all active incoming emergencies for a hospital */
+  getIncomingEmergenciesForHospital: (hospitalId: string): Emergency[] => {
+    const emergencies = emergencyService.getEmergencies();
+    return emergencies.filter(
+      e => e.recommendedHospitalId === hospitalId && !['COMPLETED', 'CANCELLED'].includes(e.status)
+    );
+  },
+
   createEmergency: (data: Partial<Emergency>): Emergency => {
     const emergencies = emergencyService.getEmergencies();
+    
+    // Check if ambulance is already busy
+    if (data.assignedAmbulanceId) {
+      const existingActive = emergencies.find(
+        e => e.assignedAmbulanceId === data.assignedAmbulanceId && !['COMPLETED', 'CANCELLED'].includes(e.status)
+      );
+      if (existingActive) {
+        throw new Error(`${data.assignedAmbulanceId} is currently busy with ${existingActive.emergencyId}.`);
+      }
+    }
 
-    // Length-based IDs collide once any emergency is deleted (length shrinks,
-    // so a later create can reuse an ID still present in the array). Derive
-    // the next number from the highest existing EM-#### instead.
-    const highest = emergencies.reduce((max, e) => {
-      const n = Number(e.emergencyId.replace(/^EM-/, ''));
-      return Number.isFinite(n) && n > max ? n : max;
-    }, 999);
-    const newId = `EM-${highest + 1}`;
-
+    const newId = emergencyService.getNextEmergencyId();
+    const now = new Date().toISOString();
+    
     const newEmergency: Emergency = {
       ...data,
       // Spread first, then pin these fields — createEmergency owns them and
@@ -40,19 +78,44 @@ export const emergencyService = {
       status: 'ASSIGNED',
       eta: data.eta || 'Calculating...',
       notes: data.notes || '',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       bedReserved: false,
+      hospitalResponse: data.recommendedHospitalId ? 'WAITING' : undefined,
+      statusHistory: [{
+        status: 'ASSIGNED',
+        timestamp: now,
+        updatedBy: 'System'
+      }],
     };
 
-    emergencies.unshift(newEmergency); // Add to beginning
+    emergencies.unshift(newEmergency);
     storageService.setItem(STORAGE_KEYS.EMERGENCIES, emergencies);
     
+    // If ambulance assigned, mark ambulance as ASSIGNED
+    if (data.assignedAmbulanceId) {
+      ambulanceService.assignAmbulance(data.assignedAmbulanceId, newId);
+    }
+
+    // Notify crew
     notificationService.addNotification({
-      message: `New emergency ${newId} created and assigned.`,
+      title: 'New Emergency Assigned',
+      message: `Emergency ${newId} created and assigned to ${data.assignedAmbulanceId || 'unit'}.`,
       type: 'info',
-      targetPortal: 'crew'
+      targetRole: 'CREW',
+      emergencyId: newId
     });
+
+    // Notify hospital if assigned
+    if (data.recommendedHospitalId) {
+      notificationService.addNotification({
+        title: 'Incoming Emergency',
+        message: `Emergency ${newId} assigned to your hospital. Ambulance ${data.assignedAmbulanceId || 'TBD'} incoming.`,
+        type: 'warning',
+        targetRole: 'HOSPITAL',
+        emergencyId: newId
+      });
+    }
 
     return newEmergency;
   },
@@ -72,40 +135,81 @@ export const emergencyService = {
     return emergencies[index];
   },
 
-  updateEmergencyStatus: (id: string, status: EmergencyStatus): Emergency | null => {
-    const updates: Partial<Emergency> = { status };
-    if (status === 'COMPLETED') {
-      // A completed emergency shouldn't still show an ambulance tied up on it.
+  updateEmergencyStatus: (id: string, status: EmergencyStatus, updatedBy: string = 'System'): Emergency | null => {
+    const emergencies = emergencyService.getEmergencies();
+    const index = emergencies.findIndex(e => e.emergencyId === id);
+    if (index === -1) return null;
+
+    const existing = emergencies[index];
+    const historyEntry = {
+      status,
+      timestamp: new Date().toISOString(),
+      updatedBy
+    };
+
+    const currentHistory = existing.statusHistory || [];
+
+    const updates: Partial<Emergency> = {
+      status,
+      statusHistory: [...currentHistory, historyEntry],
+    };
+    if (status === 'COMPLETED' || status === 'CANCELLED') {
+      // A completed/cancelled emergency shouldn't still show an ambulance
+      // tied up on it, even before releaseAmbulance's own write below lands.
       updates.assignedAmbulanceId = null;
     }
+
     const emergency = emergencyService.updateEmergency(id, updates);
-    if (emergency && status === 'COMPLETED') {
-      notificationService.addNotification({
-        message: `Emergency ${id} completed.`,
-        type: 'success'
-      });
+
+    if (!emergency) return null;
+
+    // Handle lifecycle side effects
+    if (status === 'ARRIVED_AT_HOSPITAL') {
+      // If hospital accepted earlier, admit patient now
+      if (emergency.recommendedHospitalId && emergency.hospitalResponse === 'ACCEPTED') {
+        hospitalService.admitPatient(emergency.recommendedHospitalId, emergency.type, emergency.severity);
+      }
+      if (emergency.assignedAmbulanceId) {
+        ambulanceService.updateAmbulanceStatus(emergency.assignedAmbulanceId, 'AT HOSPITAL');
+      }
+    } else if (status === 'COMPLETED' || status === 'CANCELLED') {
+      // Release ambulance
+      if (existing.assignedAmbulanceId) {
+        ambulanceService.releaseAmbulance(existing.assignedAmbulanceId);
+      }
+      // Release hospital capacity if was accepted
+      if (emergency.recommendedHospitalId && emergency.hospitalResponse === 'ACCEPTED') {
+        const wasAdmitted = currentHistory.some(h => h.status === 'ARRIVED_AT_HOSPITAL');
+        hospitalService.releaseCapacity(emergency.recommendedHospitalId, emergency.type, emergency.severity, wasAdmitted);
+      }
+
+      if (status === 'COMPLETED') {
+        notificationService.addNotification({
+          title: 'Emergency Completed',
+          message: `Emergency ${id} completed. Unit is now available.`,
+          type: 'success',
+          emergencyId: id,
+          targetRole: 'DISPATCHER'
+        });
+      }
+    } else if (['EN_ROUTE_TO_PATIENT', 'ARRIVED_AT_SCENE', 'PATIENT_PICKED_UP', 'EN_ROUTE_TO_HOSPITAL'].includes(status)) {
+      if (emergency.assignedAmbulanceId) {
+        ambulanceService.updateAmbulanceStatus(emergency.assignedAmbulanceId, 'EN ROUTE');
+      }
     }
+
     return emergency;
   },
 
   getRecommendedHospital: (emergency: Emergency, hospitals: Hospital[]): string | null => {
     if (!hospitals || hospitals.length === 0) return null;
     
-    // Simplistic recommendation logic for demo purposes
-    // Prioritize hospitals with available emergency beds, then nearest (mocked by first in array that's AVAILABLE)
     const available = hospitals.filter(h => h.emergencyDepartmentStatus === 'AVAILABLE' && h.emergencyBedsAvailable > 0);
+    if (available.length > 0) return available[0].hospitalId;
     
-    if (available.length > 0) {
-      return available[0].hospitalId;
-    }
-    
-    // Fallback to first busy hospital with beds
     const busy = hospitals.filter(h => h.emergencyDepartmentStatus === 'BUSY' && h.emergencyBedsAvailable > 0);
-    if (busy.length > 0) {
-      return busy[0].hospitalId;
-    }
+    if (busy.length > 0) return busy[0].hospitalId;
 
-    // Ultimate fallback
     return hospitals[0].hospitalId;
   },
   
@@ -113,5 +217,11 @@ export const emergencyService = {
     const emergencies = emergencyService.getEmergencies();
     const filtered = emergencies.filter(e => e.emergencyId !== id);
     storageService.setItem(STORAGE_KEYS.EMERGENCIES, filtered);
+  },
+
+  getEmergencyHistory: (): Emergency[] => {
+    return emergencyService.getEmergencies().filter(e => 
+      e.status === 'COMPLETED' || e.status === 'CANCELLED'
+    );
   }
 };

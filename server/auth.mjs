@@ -8,7 +8,7 @@ const USER_COLUMNS = 'id, name, email, phone, role, organization, employee_id AS
 const DEMO_USERS = {
   'crew@demo.com': {
     id: '00000000-0000-0000-0000-000000000001', name: 'Marcus Reid', email: 'crew@demo.com', phone: '+1 555-0101',
-    role: 'AMBULANCE_CREW', organization: 'Metro Ambulance Service', employeeId: 'EMP-2847', ambulanceId: 'AMB-042', status: 'active',
+    role: 'AMBULANCE_CREW', organization: 'Metro Ambulance Service', employeeId: 'EMP-2847', ambulanceId: 'AMB-001', status: 'active',
     passwordHash: '$2b$12$fP9TgfPQo/CyDf2K80LLc.ODxL0AWfDpqz2od2yehnFasGlrMNaZq',
   },
   'dispatch@demo.com': {
@@ -18,7 +18,7 @@ const DEMO_USERS = {
   },
   'hospital@demo.com': {
     id: '00000000-0000-0000-0000-000000000003', name: 'Dr. James Okafor', email: 'hospital@demo.com', phone: '+1 555-0303',
-    role: 'HOSPITAL_STAFF', organization: 'City General Hospital', employeeId: 'HSP-5512', department: 'Emergency Medicine', status: 'active',
+    role: 'HOSPITAL_STAFF', organization: 'City General Hospital', employeeId: 'HSP-5512', department: 'Emergency Medicine', hospitalId: 'HOSP-001', status: 'active',
     passwordHash: '$2b$12$fP9TgfPQo/CyDf2K80LLc.ODxL0AWfDpqz2od2yehnFasGlrMNaZq',
   },
 };
