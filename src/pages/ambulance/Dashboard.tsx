@@ -12,12 +12,6 @@ import { EmergencyStatus } from '../../types';
 
 const STATUSES: import('../../types').AmbulanceStatus[] = ['AVAILABLE', 'ASSIGNED', 'ACCEPTED', 'EN ROUTE', 'AT HOSPITAL', 'OFF DUTY'];
 
-const HOSPITAL_OPTIONS = [
-  { id: 'H1', name: 'City General Hospital', status: 'OPEN', location: { lat: 40.7135, lng: -74.002 }, emergencyDepartment: { status: 'AVAILABLE' }, icu: { available: 12, total: 20 }, cardiac: { status: 'AVAILABLE' }, trauma: { status: 'AVAILABLE' } },
-  { id: 'H2', name: 'St. Mary Medical Center', status: 'LIMITED', location: { lat: 40.719, lng: -73.99 }, emergencyDepartment: { status: 'LIMITED' }, icu: { available: 2, total: 20 }, cardiac: { status: 'AVAILABLE' }, trauma: { status: 'LIMITED' } },
-  { id: 'H3', name: 'Metro Health Hospital', status: 'OPEN', location: { lat: 40.722, lng: -74.012 }, emergencyDepartment: { status: 'AVAILABLE' }, icu: { available: 5, total: 16 }, cardiac: { status: 'LIMITED' }, trauma: { status: 'AVAILABLE' } },
-];
-
 // The crew's mock GPS is a static point in the seed data, so "distance
 // traveled" doesn't map to a real speedometer feed. We derive an estimated
 // travel speed from the same assumed-average-speed model used for ETA,
@@ -83,7 +77,16 @@ export default function AmbulanceDashboard() {
   const location = useLocation();
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [statusError, setStatusError] = useState('');
-  const [recommendation, setRecommendation] = useState<{ hospitalName: string; etaMinutes: number; distanceKm: number; confidence: number; specialty: string; readiness: { specialtyReady: boolean; icuReady: boolean } } | null>(null);
+  const [recommendation, setRecommendation] = useState<{
+    hospitalName: string;
+    etaMinutes: number;
+    distanceKm: number;
+    confidence: number;
+    specialty: string;
+    readiness: { specialtyReady: boolean; icuReady: boolean };
+    decidedBy?: 'rules' | 'ai';
+    ai?: { hospitalName: string; explanation: string; overridden: boolean };
+  } | null>(null);
   const [recommendationLoading, setRecommendationLoading] = useState(true);
   const emergencyRef = useRef<HTMLDivElement>(null);
   const navigationRef = useRef<HTMLDivElement>(null);
@@ -140,14 +143,43 @@ export default function AmbulanceDashboard() {
 
   useEffect(() => {
     let cancelled = false;
+
+    // No active emergency yet (crew is between calls) — nothing to
+    // recommend for. Clear any stale recommendation from a prior call
+    // rather than leaving it showing.
+    if (!activeEmergency) {
+      setRecommendation(null);
+      setRecommendationLoading(false);
+      return;
+    }
+
+    setRecommendationLoading(true);
+
+    // recommendHospital (server/ai.mjs) expects each hospital's readiness as
+    // nested { status } objects per specialty, and ICU as { available, total
+    // }. The real Hospital record (src/types/index.ts) is flat, so map it
+    // here rather than changing the shared Hospital type just for this call.
+    // There's no dedicated cardiac field on Hospital, so cardiac readiness
+    // falls back to the general emergency department status.
+    const aiHospitals = hospitals.map(h => ({
+      id: h.hospitalId,
+      name: h.name,
+      location: h.location,
+      status: h.emergencyDepartmentStatus,
+      emergencyDepartment: { status: h.emergencyDepartmentStatus },
+      cardiac: { status: h.emergencyDepartmentStatus },
+      trauma: { status: h.traumaAvailable && h.traumaAvailable > 0 ? 'AVAILABLE' : 'UNAVAILABLE' },
+      icu: { available: h.icuAvailable, total: h.icuTotal },
+    }));
+
     fetch('/api/ai/recommend-hospital', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        emergencyType: 'Cardiac Arrest',
-        severity: 'CRITICAL',
-        origin: { lat: 40.7128, lng: -74.006 },
-        hospitals: HOSPITAL_OPTIONS,
+        emergencyType: activeEmergency.type,
+        severity: activeEmergency.severity,
+        origin: { lat: activeEmergency.latitude, lng: activeEmergency.longitude },
+        hospitals: aiHospitals,
       }),
     })
       .then(response => {
@@ -158,7 +190,10 @@ export default function AmbulanceDashboard() {
       .catch(() => { if (!cancelled) setRecommendation(null); })
       .finally(() => { if (!cancelled) setRecommendationLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch when the
+    // assigned emergency changes; hospitals/id/type/severity/location are all
+    // derived from it or from the shared data snapshot already in deps below.
+  }, [activeEmergency?.emergencyId, activeEmergency?.type, activeEmergency?.severity, hospitals]);
 
   const handleStatusChange = (newStatus: EmergencyStatus) => {
     if (activeEmergency) {
@@ -511,7 +546,9 @@ export default function AmbulanceDashboard() {
         <div className={`relative overflow-hidden ${activeEmergency && recommendedHospital ? 'bg-operational-bg' : 'bg-surface-panel'} border border-hairline rounded-2xl p-6`}>
           <div className="flex items-start justify-between mb-3">
             <p className="text-xs uppercase tracking-widest text-tertiary font-semibold">AI Hospital Recommendation</p>
-            <span className="text-xs bg-operational-bg text-operational px-2.5 py-1 rounded-full font-mono font-semibold">AI</span>
+            <span className="text-xs bg-operational-bg text-operational px-2.5 py-1 rounded-full font-mono font-semibold">
+              {recommendation?.decidedBy === 'ai' ? 'AI REVIEWED' : 'AI'}
+            </span>
           </div>
           {recommendationLoading ? (
             <p className="text-tertiary text-sm py-6">Calculating safest destination…</p>
@@ -538,6 +575,14 @@ export default function AmbulanceDashboard() {
                 ))}
               </div>
               <p className="text-positive font-bold text-sm border-t border-hairline pt-3">{recommendation.confidence}% recommendation confidence</p>
+              {recommendation.ai && (
+                <div className="mt-3 pt-3 border-t border-hairline">
+                  <p className="text-xs uppercase tracking-widest text-operational font-semibold mb-1">
+                    {recommendation.ai.overridden ? 'AI Override' : 'AI Confirmation'}
+                  </p>
+                  <p className="text-secondary text-sm">{recommendation.ai.explanation}</p>
+                </div>
+              )}
             </>
           ) : activeEmergency && recommendedHospital ? (() => {
             const hDetails = hospitalService.getHospitalCapacityDetails(recommendedHospital);
