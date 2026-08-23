@@ -4,6 +4,7 @@ import { storageService } from './storageService';
 import { notificationService } from './notificationService';
 import { ambulanceService } from './ambulanceService';
 import { hospitalService } from './hospitalService';
+import { apiRequest } from './api';
 
 export const emergencyService = {
   getEmergencies: (): Emergency[] => {
@@ -91,7 +92,29 @@ export const emergencyService = {
 
     emergencies.unshift(newEmergency);
     storageService.setItem(STORAGE_KEYS.EMERGENCIES, emergencies);
-    
+
+    // Persist to the real `emergencies` table (with lat/lng -> the geo
+    // column) via the relational API, in addition to the localStorage +
+    // shared_state blob sync above. Fire-and-forget: dispatchers created
+    // this locally and it's already visible in the UI, so a slow or failed
+    // network write must never block or roll back that. Only DISPATCHER
+    // accounts are authorized to POST /api/emergencies, so a 403 from other
+    // roles is expected and logged rather than surfaced.
+    void apiRequest('/api/emergencies', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: newEmergency.type,
+        severity: newEmergency.severity,
+        location: newEmergency.pickupLocation,
+        ambulanceId: newEmergency.assignedAmbulanceId || undefined,
+        notes: newEmergency.notes || undefined,
+        latitude: newEmergency.latitude || undefined,
+        longitude: newEmergency.longitude || undefined,
+      }),
+    }).catch(error => {
+      console.error(`Failed to persist ${newId} to the database:`, error);
+    });
+
     // If ambulance assigned, mark ambulance as ASSIGNED
     if (data.assignedAmbulanceId) {
       ambulanceService.assignAmbulance(data.assignedAmbulanceId, newId);

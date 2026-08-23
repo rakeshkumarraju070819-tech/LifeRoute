@@ -4,6 +4,8 @@ import { emergencyService } from '../services/emergencyService';
 import { ambulanceService } from '../services/ambulanceService';
 import { hospitalService } from '../services/hospitalService';
 import { notificationService } from '../services/notificationService';
+import { storageService } from '../services/storageService';
+import { realtimeSyncService } from '../services/realtimeSyncService';
 import { Emergency, Ambulance, Hospital, Notification } from '../types';
 
 export interface SharedData {
@@ -49,9 +51,33 @@ export function useSharedDataSync() {
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('local-storage-update', handleStorageChange);
 
+    // On mount, pull the latest snapshot of each collection from the backend
+    // in case another device/role changed it while this tab was closed.
+    (async () => {
+      for (const key of Object.values(STORAGE_KEYS)) {
+        if (!realtimeSyncService.isSyncable(key)) continue;
+        const remoteValue = await realtimeSyncService.pull(key);
+        if (remoteValue) {
+          localStorage.setItem(key, JSON.stringify(remoteValue));
+        }
+      }
+      refreshData();
+    })();
+
+    // Live push updates from other connected clients (other devices, other
+    // roles) arrive over Socket.IO. Write them straight into localStorage
+    // (bypassing storageService.setItem) so we don't re-push what we just
+    // received — that would create an echo loop between clients.
+    const unsubscribeRealtime = realtimeSyncService.subscribe((key, value) => {
+      if (!Object.values(STORAGE_KEYS).includes(key)) return;
+      localStorage.setItem(key, JSON.stringify(value));
+      refreshData();
+    });
+
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('local-storage-update', handleStorageChange);
+      unsubscribeRealtime();
     };
   }, [refreshData]);
 

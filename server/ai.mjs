@@ -86,5 +86,18 @@ export function recommendHospital({ emergencyType, severity, origin, hospitals }
       distanceKm: candidate.distanceKm,
       etaMinutes: candidate.etaMinutes,
     })),
+    decidedBy: 'rules',
+    // Every scored, non-unavailable candidate (not just the top 3), for the
+    // optional Groq layer in aiExplain.mjs to reason over. Never expose this
+    // as a source of new hospitals — it's the same vetted `ranked` list the
+    // rules-based pick above came from.
+    candidates: ranked.map(candidate => ({
+      hospitalId: candidate.hospital.id,
+      hospitalName: candidate.hospital.name,
+      distanceKm: candidate.distanceKm,
+      etaMinutes: candidate.etaMinutes,
+      readiness: candidate.readiness,
+      score: Math.round(candidate.score),
+    })),
   };
 }

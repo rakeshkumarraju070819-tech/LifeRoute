@@ -3,8 +3,10 @@ import { TomTomConfig } from '@tomtom-org/maps-sdk/core';
 import { TomTomMap as TTMap } from '@tomtom-org/maps-sdk/map';
 import type { FeatureCollection, Point, LineString } from 'geojson';
 import type { GeoJSONSource } from 'maplibre-gl';
-import { setWorkerUrl } from 'maplibre-gl';
+import { Marker, setWorkerUrl } from 'maplibre-gl';
+import { bezierSpline, distance as turfDistance, lineString } from '@turf/turf';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { useTheme } from '../context/ThemeContext';
 // Vite's `?worker&url` query resolves to the built worker chunk's URL as a
 // plain string at build time.
 import mapLibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
@@ -19,9 +21,11 @@ import mapLibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 // `?url` alone emits the file without that sibling bundled in.
 setWorkerUrl(mapLibreWorkerUrl);
 
-// Mock data — same entities the old MapPlaceholder rendered as SVG, now as
-// real coordinates. Swap for live data from the backend (see
-// /src/context/MapDataContext, once that exists) once the API is wired up.
+// Mock fleet data for the dispatcher's fleet-wide overview — swap for live
+// data from the backend (see /src/context/MapDataContext, once that exists)
+// once the API is wired up. The crew "Live Navigation" view no longer uses
+// this mock data; it renders from real ambulance/emergency/hospital records
+// passed in via the `crewFocus` prop instead (see Dashboard.tsx).
 const CENTER: [number, number] = [-74.006, 40.7128]; // NYC — matches the mock GPS in Dashboard.tsx
 
 type AmbulanceStatus = 'available' | 'en-route' | 'dispatched';
@@ -47,14 +51,6 @@ const EMERGENCIES: Emergency[] = [
   { id: 'E2', lng: -73.997, lat: 40.7105, severity: 'high' },
 ];
 
-// Recommended route: AMB-042 -> City General, matching "Via Oak St -> Medical
-// Blvd" shown in the crew dashboard's Live Navigation panel.
-const RECOMMENDED_ROUTE: [number, number][] = [
-  [-74.01, 40.716],
-  [-74.006, 40.715],
-  [-74.002, 40.7135],
-];
-
 // Status colors matched to StatusBadge.tsx's Tailwind classes
 const AMBULANCE_COLOR: Record<AmbulanceStatus, string> = {
   available: '#22c55e', // green-500
@@ -76,11 +72,6 @@ function pointFC<T extends { lng: number; lat: number }>(
   };
 }
 
-const ROUTE_FC: FeatureCollection<LineString> = {
-  type: 'FeatureCollection',
-  features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: RECOMMENDED_ROUTE }, properties: {} }],
-};
-
 const HOSPITALS_FC = pointFC(HOSPITALS, h => ({ label: h.label }));
 const EMERGENCIES_FC = pointFC(EMERGENCIES, e => ({ severity: e.severity }));
 
@@ -88,19 +79,121 @@ function ambulancesFC(visible: Ambulance[]) {
   return pointFC(visible, a => ({ label: a.label, status: a.status, color: AMBULANCE_COLOR[a.status] }));
 }
 
+// A TomTom-hosted standard style ID — see @tomtom-org/maps-sdk/map's
+// `standardStyleIDs`. We only ever use these three: the light/dark pair
+// (theme-driven) and satellite (the "Satellite" toggle).
+type BaseStyle = 'standardLight' | 'standardDark' | 'satellite';
+
+export interface CrewFocusPoint {
+  lat: number;
+  lng: number;
+  /** Bold line in the map label bubble, e.g. "Incident Location" or the hospital name. */
+  title: string;
+  /** Muted line under the title, e.g. an address or "2.1 km away". */
+  subtitle?: string;
+}
+
+export interface CrewFocus {
+  ambulance: CrewFocusPoint;
+  /** The active leg's target — the scene before pickup, the hospital after. */
+  destination: CrewFocusPoint & { kind: 'incident' | 'hospital' };
+}
+
 interface TomTomMapProps {
   height?: string;
   showFilters?: boolean;
   variant?: 'crew' | 'dispatcher';
+  /** Top-left "Map / Satellite" pill toggle, as seen on the crew navigation view. */
+  showStyleToggle?: boolean;
+  /**
+   * Real ambulance → incident/hospital focus for the crew "Live Navigation"
+   * view. When set (variant="crew"), the map centers on these two points,
+   * draws a route between them, and renders labeled pins instead of the
+   * dispatcher's fleet-wide mock layers.
+   */
+  crewFocus?: CrewFocus;
 }
 
-export default function TomTomMap({ height = 'h-80', showFilters = false, variant = 'dispatcher' }: TomTomMapProps) {
+/** Builds a road-like curve between two points via a slight midpoint offset, matching
+ * the gentle zig-zag of a real routed path rather than a straight "as the crow flies" line. */
+function buildRouteLine(from: [number, number], to: [number, number]): FeatureCollection<LineString> {
+  const mid: [number, number] = [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2];
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  // Perpendicular offset, scaled to ~18% of the leg length, alternated per
+  // call site by the sign of dx so multiple route legs don't mirror exactly.
+  const offset: [number, number] = [mid[0] - dy * 0.18, mid[1] + dx * 0.18];
+  const raw = lineString([from, offset, to]);
+  try {
+    const curved = bezierSpline(raw, { sharpness: 0.9 });
+    return { type: 'FeatureCollection', features: [curved] };
+  } catch {
+    return { type: 'FeatureCollection', features: [raw] };
+  }
+}
+
+function createPinElement(kind: 'incident' | 'hospital' | 'ambulance'): HTMLDivElement {
+  const el = document.createElement('div');
+  el.style.display = 'flex';
+  el.style.alignItems = 'center';
+  el.style.justifyContent = 'center';
+  el.style.width = kind === 'ambulance' ? '34px' : '30px';
+  el.style.height = kind === 'ambulance' ? '34px' : '30px';
+  el.style.borderRadius = '999px';
+  el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.35)';
+  el.style.border = '2px solid #fff';
+
+  if (kind === 'incident') {
+    el.style.background = 'var(--color-critical)';
+    el.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2 2 20h20L12 2z" fill="#fff"/><rect x="11" y="9" width="2" height="6" fill="var(--color-critical)"/><rect x="11" y="16" width="2" height="2" fill="var(--color-critical)"/></svg>';
+  } else if (kind === 'hospital') {
+    el.style.background = 'var(--color-positive)';
+    el.innerHTML = '<span style="color:#fff;font-weight:800;font-size:14px;font-family:var(--font-sans)">H</span>';
+  } else {
+    el.style.background = 'var(--color-operational)';
+    el.innerHTML =
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l1.5-3h3L13 12h5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="16" r="1.6" fill="#fff"/><circle cx="17" cy="16" r="1.6" fill="#fff"/><path d="M3 12v3h1M20 12l-2-4h-4v4h6z" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+  return el;
+}
+
+function createLabelElement(title: string, subtitle: string | undefined, accent: string): HTMLDivElement {
+  const wrap = document.createElement('div');
+  wrap.style.background = 'var(--color-surface-panel-raised)';
+  wrap.style.border = `1px solid ${accent}`;
+  wrap.style.borderRadius = '10px';
+  wrap.style.padding = '6px 10px';
+  wrap.style.boxShadow = '0 4px 12px rgba(0,0,0,0.25)';
+  wrap.style.fontFamily = 'var(--font-sans)';
+  wrap.style.whiteSpace = 'nowrap';
+  wrap.style.pointerEvents = 'none';
+  wrap.innerHTML = `
+    <div style="color:${accent};font-weight:700;font-size:11px;line-height:1.3">${title}</div>
+    ${subtitle ? `<div style="color:var(--color-text-secondary);font-size:10px;line-height:1.3">${subtitle}</div>` : ''}
+  `;
+  return wrap;
+}
+
+export default function TomTomMap({
+  height = 'h-80',
+  showFilters = false,
+  variant = 'dispatcher',
+  showStyleToggle = false,
+  crewFocus,
+}: TomTomMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<InstanceType<typeof TTMap> | null>(null);
+  const markersRef = useRef<Marker[]>([]);
+  const { theme } = useTheme();
   const [filters, setFilters] = useState({ ambulances: true, emergencies: true, hospitals: true, traffic: true });
+  const [mapMode, setMapMode] = useState<'map' | 'satellite'>('map');
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing-key' | 'error'>('loading');
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const toggle = (k: keyof typeof filters) => setFilters(f => ({ ...f, [k]: !f[k] }));
+
+  const baseStyle: BaseStyle =
+    mapMode === 'satellite' ? 'satellite' : theme === 'dark' ? 'standardDark' : 'standardLight';
 
   // Fetch /api/tomtom/config with a couple of quick retries. `npm run
   // dev:full` starts Vite and the Express API concurrently, so on a fresh
@@ -110,8 +203,15 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
   async function fetchTomTomConfig(retries = 3, delayMs = 400): Promise<{ configured: boolean; apiKey?: string }> {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const response = await fetch('/api/tomtom/config');
-        if (response.ok) return (await response.json()) as { configured: boolean; apiKey?: string };
+        // cache: 'no-store' prevents the browser returning a 304 with an
+        // empty body — we always need the JSON payload containing the API key.
+        const response = await fetch('/api/tomtom/config', { cache: 'no-store' });
+        if (response.ok) {
+          const text = await response.text();
+          // Guard against an empty body (e.g. a misconfigured proxy 304)
+          if (!text) throw new Error('/api/tomtom/config returned an empty body');
+          return JSON.parse(text) as { configured: boolean; apiKey?: string };
+        }
         throw new Error(`/api/tomtom/config responded ${response.status}`);
       } catch (err) {
         if (attempt === retries) throw err;
@@ -124,6 +224,10 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
   useEffect(() => {
     if (!containerRef.current) return;
     let cancelled = false;
+
+    const initialCenter: [number, number] = crewFocus
+      ? [(crewFocus.ambulance.lng + crewFocus.destination.lng) / 2, (crewFocus.ambulance.lat + crewFocus.destination.lat) / 2]
+      : CENTER;
 
     const initializeMap = async () => {
       let config: { configured: boolean; apiKey?: string };
@@ -153,7 +257,8 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
       let map: InstanceType<typeof TTMap>;
       try {
         map = new TTMap({
-          mapLibre: { container: containerRef.current!, center: CENTER, zoom: 13 },
+          style: baseStyle,
+          mapLibre: { container: containerRef.current!, center: initialCenter, zoom: crewFocus ? 13.5 : 13 },
         });
       } catch (err) {
         if (!cancelled) {
@@ -169,64 +274,86 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
         const gl = map.mapLibreMap;
 
         try {
-          // Recommended route (crew view only)
-          if (variant === 'crew') {
-            gl.addSource('route', { type: 'geojson', data: ROUTE_FC });
+          if (variant === 'crew' && crewFocus) {
+            const from: [number, number] = [crewFocus.ambulance.lng, crewFocus.ambulance.lat];
+            const to: [number, number] = [crewFocus.destination.lng, crewFocus.destination.lat];
+            const routeFc = buildRouteLine(from, to);
+            const accent = crewFocus.destination.kind === 'incident' ? '#e5484d' : '#8b5cf6';
+
+            gl.addSource('crew-route', { type: 'geojson', data: routeFc });
             gl.addLayer({
-              id: 'route-line',
+              id: 'crew-route-line',
               type: 'line',
-              source: 'route',
+              source: 'crew-route',
               layout: { 'line-join': 'round', 'line-cap': 'round' },
-              paint: { 'line-color': '#3b82f6', 'line-width': 4, 'line-dasharray': [2, 1.5] },
+              paint: { 'line-color': accent, 'line-width': 4 },
+            });
+
+            // Destination pin (red teardrop for the incident scene, green "H" for the hospital)
+            const destEl = createPinElement(crewFocus.destination.kind);
+            new Marker({ element: destEl, anchor: 'bottom' }).setLngLat(to).addTo(gl);
+            const destLabelEl = createLabelElement(crewFocus.destination.title, crewFocus.destination.subtitle, accent);
+            new Marker({ element: destLabelEl, anchor: 'bottom', offset: [0, -38] }).setLngLat(to).addTo(gl);
+
+            // Ambulance marker with its own label bubble
+            const ambEl = createPinElement('ambulance');
+            new Marker({ element: ambEl, anchor: 'center' }).setLngLat(from).addTo(gl);
+            const ambLabelEl = createLabelElement(crewFocus.ambulance.title, crewFocus.ambulance.subtitle, '#8b5cf6');
+            new Marker({ element: ambLabelEl, anchor: 'top', offset: [0, 20] }).setLngLat(from).addTo(gl);
+
+            markersRef.current = [];
+
+            const bounds: [[number, number], [number, number]] = [
+              [Math.min(from[0], to[0]) - 0.01, Math.min(from[1], to[1]) - 0.01],
+              [Math.max(from[0], to[0]) + 0.01, Math.max(from[1], to[1]) + 0.01],
+            ];
+            gl.fitBounds(bounds, { padding: 60, duration: 0 });
+          } else {
+            // Dispatcher fleet-wide overview (mock data — see header comment)
+            gl.addSource('hospitals', { type: 'geojson', data: HOSPITALS_FC });
+            gl.addLayer({
+              id: 'hospitals-dot',
+              type: 'circle',
+              source: 'hospitals',
+              paint: { 'circle-radius': 9, 'circle-color': '#ef4444', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' },
+            });
+            gl.addLayer({
+              id: 'hospitals-label',
+              type: 'symbol',
+              source: 'hospitals',
+              layout: { 'text-field': ['get', 'label'], 'text-offset': [0, 1.4], 'text-anchor': 'top', 'text-size': 11, 'text-optional': true },
+              paint: { 'text-color': '#fecaca', 'text-halo-color': '#0d1530', 'text-halo-width': 1.2 },
+            });
+
+            gl.addSource('ambulances', { type: 'geojson', data: ambulancesFC(AMBULANCES) });
+            gl.addLayer({
+              id: 'ambulances-dot',
+              type: 'circle',
+              source: 'ambulances',
+              paint: { 'circle-radius': 8, 'circle-color': ['get', 'color'], 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' },
+            });
+            gl.addLayer({
+              id: 'ambulances-label',
+              type: 'symbol',
+              source: 'ambulances',
+              layout: { 'text-field': ['get', 'label'], 'text-offset': [0, 1.3], 'text-anchor': 'top', 'text-size': 10, 'text-optional': true },
+              paint: { 'text-color': '#cbd5e1', 'text-halo-color': '#0d1530', 'text-halo-width': 1.2 },
+            });
+
+            gl.addSource('emergencies', { type: 'geojson', data: EMERGENCIES_FC });
+            gl.addLayer({
+              id: 'emergencies-dot',
+              type: 'circle',
+              source: 'emergencies',
+              paint: {
+                'circle-radius': 10,
+                'circle-color': ['match', ['get', 'severity'], 'critical', '#ef4444', '#f59e0b'],
+                'circle-opacity': 0.85,
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#fff',
+              },
             });
           }
-
-          // Hospitals
-          gl.addSource('hospitals', { type: 'geojson', data: HOSPITALS_FC });
-          gl.addLayer({
-            id: 'hospitals-dot',
-            type: 'circle',
-            source: 'hospitals',
-            paint: { 'circle-radius': 9, 'circle-color': '#ef4444', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' },
-          });
-          gl.addLayer({
-            id: 'hospitals-label',
-            type: 'symbol',
-            source: 'hospitals',
-            layout: { 'text-field': ['get', 'label'], 'text-offset': [0, 1.4], 'text-anchor': 'top', 'text-size': 11, 'text-optional': true },
-            paint: { 'text-color': '#fecaca', 'text-halo-color': '#0d1530', 'text-halo-width': 1.2 },
-          });
-
-          // Ambulances
-          gl.addSource('ambulances', { type: 'geojson', data: ambulancesFC(AMBULANCES) });
-          gl.addLayer({
-            id: 'ambulances-dot',
-            type: 'circle',
-            source: 'ambulances',
-            paint: { 'circle-radius': 8, 'circle-color': ['get', 'color'], 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' },
-          });
-          gl.addLayer({
-            id: 'ambulances-label',
-            type: 'symbol',
-            source: 'ambulances',
-            layout: { 'text-field': ['get', 'label'], 'text-offset': [0, 1.3], 'text-anchor': 'top', 'text-size': 10, 'text-optional': true },
-            paint: { 'text-color': '#cbd5e1', 'text-halo-color': '#0d1530', 'text-halo-width': 1.2 },
-          });
-
-          // Emergencies
-          gl.addSource('emergencies', { type: 'geojson', data: EMERGENCIES_FC });
-          gl.addLayer({
-            id: 'emergencies-dot',
-            type: 'circle',
-            source: 'emergencies',
-            paint: {
-              'circle-radius': 10,
-              'circle-color': ['match', ['get', 'severity'], 'critical', '#ef4444', '#f59e0b'],
-              'circle-opacity': 0.85,
-              'circle-stroke-width': 2,
-              'circle-stroke-color': '#fff',
-            },
-          });
 
           setStatus('ready');
         } catch (err) {
@@ -257,16 +384,44 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
 
     return () => {
       cancelled = true;
+      markersRef.current.forEach(m => m.remove());
+      markersRef.current = [];
       mapRef.current?.mapLibreMap.remove();
       mapRef.current = null;
     };
+    // Deliberately re-init only on variant change or a new crew focus target
+    // (ambulance id / destination), not on every GPS tick — see the
+    // dedicated effect below for cheap in-place marker/route updates, and
+    // the style effect below for theme/map-mode changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variant]);
+  }, [variant, crewFocus?.destination.title, crewFocus?.destination.kind]);
 
-  // Filter toggles: swap each source's data between the full set and empty
+  // Theme or Map/Satellite toggle changed — swap the base style in place
+  // rather than tearing down the whole map (keeps markers/routes/camera).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || status !== 'ready') return;
+    map.setStyle(baseStyle, { keepState: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseStyle]);
+
+  // Crew focus moved (e.g. the ambulance's GPS ticked) — reposition the
+  // existing route/markers instead of a full re-init.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || status !== 'ready' || variant !== 'crew' || !crewFocus) return;
+    const gl = map.mapLibreMap;
+    const from: [number, number] = [crewFocus.ambulance.lng, crewFocus.ambulance.lat];
+    const to: [number, number] = [crewFocus.destination.lng, crewFocus.destination.lat];
+    const routeSrc = gl.getSource('crew-route');
+    if (routeSrc && 'setData' in routeSrc) (routeSrc as GeoJSONSource).setData(buildRouteLine(from, to));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crewFocus?.ambulance.lat, crewFocus?.ambulance.lng, status]);
+
+  // Dispatcher filter toggles: swap each source's data between the full set and empty
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || status !== 'ready' || variant !== 'dispatcher') return;
     const gl = map.mapLibreMap;
     const empty: FeatureCollection<Point> = { type: 'FeatureCollection', features: [] };
 
@@ -280,7 +435,7 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
     const emergenciesSrc = gl.getSource('emergencies');
     if (emergenciesSrc && 'setData' in emergenciesSrc)
       (emergenciesSrc as GeoJSONSource).setData(filters.emergencies ? EMERGENCIES_FC : empty);
-  }, [filters, status]);
+  }, [filters, status, variant]);
 
   // If height looks like a CSS value (contains 'px', '%', 'vh', etc.) use it directly;
   // otherwise treat it as a Tailwind shorthand and convert the common cases.
@@ -291,16 +446,16 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
   if (status === 'missing-key') {
     return (
       <div
-        className="relative bg-[#1a2035] rounded-lg overflow-hidden border border-slate-700 flex flex-col items-center justify-center text-center p-6"
+        className="relative bg-surface-panel rounded-lg overflow-hidden border border-hairline flex flex-col items-center justify-center text-center p-6"
         style={{ height: heightStyle }}
       >
-        <p className="text-amber-400 text-sm font-semibold mb-2">TomTom API key not configured</p>
-        <p className="text-slate-400 text-xs max-w-sm">
+        <p className="text-warning text-sm font-semibold mb-2">TomTom API key not configured</p>
+        <p className="text-secondary text-xs max-w-sm">
           The API server responded but reported no key set. Add{' '}
-          <code className="text-slate-300 font-mono">TOMTOM_API_KEY=your_key</code> to{' '}
-          <code className="text-slate-300 font-mono">.env</code> at the project root, then restart the API server (
-          <code className="text-slate-300 font-mono">npm run dev:server</code>). Get a free key at{' '}
-          <a href="https://my.tomtom.com" target="_blank" rel="noreferrer" className="underline text-amber-300">
+          <code className="text-primary font-mono">TOMTOM_API_KEY=your_key</code> to{' '}
+          <code className="text-primary font-mono">.env</code> at the project root, then restart the API server (
+          <code className="text-primary font-mono">npm run dev:server</code>). Get a free key at{' '}
+          <a href="https://my.tomtom.com" target="_blank" rel="noreferrer" className="underline text-warning">
             my.tomtom.com
           </a>
           .
@@ -312,12 +467,12 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
   if (status === 'error') {
     return (
       <div
-        className="relative bg-[#1a2035] rounded-lg overflow-hidden border border-red-900/50 flex flex-col items-center justify-center text-center p-6"
+        className="relative bg-surface-panel rounded-lg overflow-hidden border border-critical/50 flex flex-col items-center justify-center text-center p-6"
         style={{ height: heightStyle }}
       >
-        <p className="text-red-400 text-sm font-semibold mb-2">Map failed to load</p>
-        <p className="text-slate-400 text-xs max-w-sm font-mono">{errorDetail}</p>
-        <p className="text-slate-500 text-xs max-w-sm mt-2">
+        <p className="text-critical text-sm font-semibold mb-2">Map failed to load</p>
+        <p className="text-secondary text-xs max-w-sm font-mono">{errorDetail}</p>
+        <p className="text-tertiary text-xs max-w-sm mt-2">
           A key that's set but invalid, expired, or restricted to the wrong domain in the TomTom dashboard shows up
           here — not as "not configured".
         </p>
@@ -326,12 +481,28 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
   }
 
   return (
-    <div className="relative rounded-lg overflow-hidden border border-slate-700" style={{ height: heightStyle }}>
+    <div className="relative rounded-lg overflow-hidden border border-hairline" style={{ height: heightStyle }}>
       <div ref={containerRef} className="absolute inset-0 w-full h-full" />
 
       {status === 'loading' && (
-        <div className="absolute inset-0 flex items-center justify-center bg-[#1a2035] z-20">
-          <span className="text-slate-400 text-xs font-mono animate-pulse">Loading map…</span>
+        <div className="absolute inset-0 flex items-center justify-center bg-surface-panel z-20">
+          <span className="text-secondary text-xs font-mono animate-pulse">Loading map…</span>
+        </div>
+      )}
+
+      {showStyleToggle && (
+        <div className="absolute top-3 left-3 z-10 flex bg-surface-panel-raised border border-hairline-strong rounded-full p-0.5 shadow-lg">
+          {(['map', 'satellite'] as const).map(m => (
+            <button
+              key={m}
+              onClick={() => setMapMode(m)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium capitalize transition-colors ${
+                mapMode === m ? 'bg-operational text-white' : 'text-secondary hover:text-primary'
+              }`}
+            >
+              {m}
+            </button>
+          ))}
         </div>
       )}
 
@@ -342,7 +513,7 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
               key={k}
               onClick={() => toggle(k)}
               className={`text-[10px] px-2 py-0.5 rounded font-medium capitalize transition-colors ${
-                filters[k] ? 'bg-blue-500 text-white' : 'bg-slate-700 text-slate-400'
+                filters[k] ? 'bg-operational text-white' : 'bg-surface-sunken text-secondary'
               }`}
             >
               {k}
@@ -351,11 +522,23 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
         </div>
       )}
 
-      <div className="absolute bottom-3 left-3 flex gap-3 z-10 bg-[#0d1530]/85 backdrop-blur px-2 py-1 rounded-lg">
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-green-500" /><span className="text-[10px] text-slate-300">Available</span></div>
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-blue-500" /><span className="text-[10px] text-slate-300">En Route</span></div>
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-[10px] text-slate-300">Emergency</span></div>
-      </div>
+      {variant === 'crew' && crewFocus ? (
+        <div className="absolute bottom-3 left-3 flex gap-3 z-10 bg-surface-panel-raised/90 backdrop-blur px-2 py-1 rounded-lg border border-hairline">
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-operational" /><span className="text-[10px] text-secondary">Ambulance</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full" style={{ background: crewFocus.destination.kind === 'incident' ? 'var(--color-critical)' : 'var(--color-positive)' }} /><span className="text-[10px] text-secondary">{crewFocus.destination.kind === 'incident' ? 'Incident' : 'Hospital'}</span></div>
+        </div>
+      ) : (
+        <div className="absolute bottom-3 left-3 flex gap-3 z-10 bg-surface-panel-raised/90 backdrop-blur px-2 py-1 rounded-lg border border-hairline">
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-green-500" /><span className="text-[10px] text-secondary">Available</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-blue-500" /><span className="text-[10px] text-secondary">En Route</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-[10px] text-secondary">Emergency</span></div>
+        </div>
+      )}
     </div>
   );
+}
+
+/** Great-circle distance in kilometers between two lat/lng points (used by the crew dashboard's stat bar). */
+export function distanceKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  return turfDistance([a.lng, a.lat], [b.lng, b.lat], { units: 'kilometers' });
 }

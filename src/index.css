@@ -23,8 +23,8 @@
   --color-critical: #e5484d;
   --color-critical-strong: #c53238;
   --color-warning: #d99a3d;
-  --color-operational: #4a9b8e;
-  --color-operational-strong: #357c71;
+  --color-operational: #8b5cf6;
+  --color-operational-strong: #7c3aed;
   --color-positive: #3ba676;
 }
 
@@ -41,7 +41,7 @@
   --color-text-tertiary: #676e7a;
   --color-critical-bg: rgba(229, 72, 77, 0.12);
   --color-warning-bg: rgba(217, 154, 61, 0.12);
-  --color-operational-bg: rgba(74, 155, 142, 0.14);
+  --color-operational-bg: rgba(139, 92, 246, 0.14);
   --color-positive-bg: rgba(59, 166, 118, 0.12);
 }
 
@@ -57,7 +57,7 @@
   --color-text-tertiary: #8b919c;
   --color-critical-bg: rgba(229, 72, 77, 0.09);
   --color-warning-bg: rgba(217, 154, 61, 0.1);
-  --color-operational-bg: rgba(74, 155, 142, 0.1);
+  --color-operational-bg: rgba(139, 92, 246, 0.1);
   --color-positive-bg: rgba(59, 166, 118, 0.09);
 }
 

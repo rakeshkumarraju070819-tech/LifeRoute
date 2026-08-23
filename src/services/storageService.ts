@@ -1,3 +1,5 @@
+import { realtimeSyncService } from './realtimeSyncService';
+
 export const storageService = {
   getItem: <T>(key: string): T | null => {
     try {
@@ -12,8 +14,14 @@ export const storageService = {
   setItem: <T>(key: string, value: T): void => {
     try {
       localStorage.setItem(key, JSON.stringify(value));
-      // Dispatch custom event for same-window syncing
+      // Dispatch custom event for same-window/same-tab syncing (existing behavior).
       window.dispatchEvent(new Event('local-storage-update'));
+      // Push to the backend + broadcast to other connected clients (other
+      // devices, other roles) via Socket.IO. Fire-and-forget: local writes
+      // must never block on the network.
+      if (realtimeSyncService.isSyncable(key) && Array.isArray(value)) {
+        void realtimeSyncService.push(key, value as unknown[]);
+      }
     } catch (error) {
       console.error(`Error setting ${key} in localStorage`, error);
     }

@@ -36,6 +36,7 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
       proxy: {
         '/api': 'http://localhost:8787',
+        '/socket.io': { target: 'http://localhost:8787', ws: true },
       },
       watch: { ignored: ['**/.figma/**'] },
     },
