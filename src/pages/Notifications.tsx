@@ -22,6 +22,7 @@ export default function Notifications() {
     return 'DISPATCHER';
   };
 
+<<<<<<< HEAD
   // Filter based on user role (targetRole) and selected type filter
   const notifs = allNotifications.filter(n => {
     if (n.targetRole && user?.role && n.targetRole !== mapRole(user.role)) return false;
@@ -39,6 +40,14 @@ export default function Notifications() {
     notifs.forEach(n => notificationService.markAsRead(n.id));
     window.dispatchEvent(new Event('local-storage-update'));
   };
+=======
+  const filtered = filter === 'all' ? notifs : notifs.filter(n => {
+    // Service types use 'error'; the UI filter/label uses 'emergency' for
+    // the same category — translate rather than widen n.type's own type.
+    const uiType: 'emergency' | Exclude<typeof n.type, 'error'> = n.type === 'error' ? 'emergency' : n.type;
+    return uiType === filter;
+  });
+>>>>>>> 1894b982d9894161717988ebf1f9a44cbaa2fff6
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-8">

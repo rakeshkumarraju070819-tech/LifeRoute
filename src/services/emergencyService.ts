@@ -49,6 +49,7 @@ export const emergencyService = {
 
   createEmergency: (data: Partial<Emergency>): Emergency => {
     const emergencies = emergencyService.getEmergencies();
+<<<<<<< HEAD
     
     // Check if ambulance is already busy
     if (data.assignedAmbulanceId) {
@@ -85,6 +86,36 @@ export const emergencyService = {
         timestamp: now,
         updatedBy: 'System'
       }],
+=======
+
+    // Length-based IDs collide once any emergency is deleted (length shrinks,
+    // so a later create can reuse an ID still present in the array). Derive
+    // the next number from the highest existing EM-#### instead.
+    const highest = emergencies.reduce((max, e) => {
+      const n = Number(e.emergencyId.replace(/^EM-/, ''));
+      return Number.isFinite(n) && n > max ? n : max;
+    }, 999);
+    const newId = `EM-${highest + 1}`;
+
+    const newEmergency: Emergency = {
+      ...data,
+      // Spread first, then pin these fields — createEmergency owns them and
+      // they should never be overridable by caller-supplied data.
+      emergencyId: newId,
+      type: data.type || 'Unknown',
+      severity: data.severity || 'MEDIUM',
+      pickupLocation: data.pickupLocation || 'Unknown Location',
+      latitude: data.latitude || 0,
+      longitude: data.longitude || 0,
+      assignedAmbulanceId: data.assignedAmbulanceId || null,
+      recommendedHospitalId: null, // Will be calculated if needed
+      status: 'ASSIGNED',
+      eta: data.eta || 'Calculating...',
+      notes: data.notes || '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      bedReserved: false,
+>>>>>>> 1894b982d9894161717988ebf1f9a44cbaa2fff6
     };
 
     emergencies.unshift(newEmergency);
