@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '0.0.0.0',
       port: parseInt(process.env.PORT || '8443'),
-      strictPort: true,
+      strictPort: false,
       proxy: {
         '/api': 'http://localhost:8787',
         '/socket.io': { target: 'http://localhost:8787', ws: true },
