@@ -101,10 +101,12 @@ export default function AmbulanceDashboard() {
 
   // Exact single source of truth for active emergency assigned to this ambulance
   const activeEmergency = emergencies.find(
-    e => e.assignedAmbulanceId === myAmbulanceId && !['COMPLETED', 'CANCELLED'].includes(e.status)
+    e => (e.assignedAmbulanceId === myAmbulanceId || e.ambulanceId === myAmbulanceId) &&
+         !['COMPLETED', 'CANCELLED'].includes(e.status)
   );
-  const recommendedHospital = activeEmergency?.recommendedHospitalId
-    ? hospitals.find(h => h.hospitalId === activeEmergency.recommendedHospitalId)
+  const targetHospitalId = activeEmergency?.recommendedHospitalId || activeEmergency?.hospitalId;
+  const recommendedHospital = targetHospitalId
+    ? hospitals.find(h => h.hospitalId === targetHospitalId)
     : null;
 
   // Before pickup the live leg runs to the scene; after pickup it runs to the hospital.

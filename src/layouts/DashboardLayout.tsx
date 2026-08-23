@@ -187,7 +187,19 @@ export default function DashboardLayout() {
                         {myNotifications.map(n => (
                           <div
                             key={n.id}
-                            onClick={() => handleMarkRead(n.id)}
+                            onClick={() => {
+                              handleMarkRead(n.id);
+                              setShowNotifications(false);
+                              if (n.emergencyId) {
+                                if (user.role === 'AMBULANCE_CREW') {
+                                  navigate('/ambulance/emergency');
+                                } else if (user.role === 'HOSPITAL_STAFF') {
+                                  navigate('/hospital/incoming');
+                                } else if (user.role === 'DISPATCHER') {
+                                  navigate('/dispatcher/emergencies');
+                                }
+                              }
+                            }}
                             className={`p-4 cursor-pointer hover:bg-surface-sunken transition-colors ${!n.read ? 'bg-operational-bg' : ''}`}
                           >
                             <div className="flex justify-between items-start mb-1">

@@ -69,13 +69,16 @@ export const emergencyService = {
       // Spread first, then pin these fields — createEmergency owns them and
       // they should never be overridable by caller-supplied data.
       emergencyId: newId,
+      id: newId,
       type: data.type || 'Unknown',
       severity: data.severity || 'MEDIUM',
       pickupLocation: data.pickupLocation || 'Unknown Location',
       latitude: data.latitude || 0,
       longitude: data.longitude || 0,
       assignedAmbulanceId: data.assignedAmbulanceId || null,
+      ambulanceId: data.assignedAmbulanceId || null,
       recommendedHospitalId: data.recommendedHospitalId ?? null,
+      hospitalId: data.recommendedHospitalId ?? null,
       status: 'ASSIGNED',
       eta: data.eta || 'Calculating...',
       notes: data.notes || '',
@@ -95,11 +98,7 @@ export const emergencyService = {
 
     // Persist to the real `emergencies` table (with lat/lng -> the geo
     // column) via the relational API, in addition to the localStorage +
-    // shared_state blob sync above. Fire-and-forget: dispatchers created
-    // this locally and it's already visible in the UI, so a slow or failed
-    // network write must never block or roll back that. Only DISPATCHER
-    // accounts are authorized to POST /api/emergencies, so a 403 from other
-    // roles is expected and logged rather than surfaced.
+    // shared_state blob sync above.
     void apiRequest('/api/emergencies', {
       method: 'POST',
       body: JSON.stringify({
@@ -120,23 +119,33 @@ export const emergencyService = {
       ambulanceService.assignAmbulance(data.assignedAmbulanceId, newId);
     }
 
-    // Notify crew
-    notificationService.addNotification({
-      title: 'New Emergency Assigned',
-      message: `Emergency ${newId} created and assigned to ${data.assignedAmbulanceId || 'unit'}.`,
-      type: 'info',
-      targetRole: 'CREW',
-      emergencyId: newId
-    });
+    const hospitals = hospitalService.getHospitals();
+    const hosp = hospitals.find(h => h.hospitalId === newEmergency.recommendedHospitalId);
+    const destName = hosp ? hosp.name : (newEmergency.recommendedHospitalId || 'TBD');
+
+    // Notify crew with rich emergency details
+    if (data.assignedAmbulanceId) {
+      notificationService.addNotification({
+        title: 'New Emergency Assigned',
+        message: `Emergency ${newId} (${newEmergency.type}) assigned to ${data.assignedAmbulanceId}. Location: ${newEmergency.pickupLocation}. Destination: ${destName}. Severity: ${newEmergency.severity}.${newEmergency.notes ? ` Notes: ${newEmergency.notes}` : ''}`,
+        type: 'info',
+        targetRole: 'CREW',
+        targetAmbulanceId: data.assignedAmbulanceId,
+        emergencyId: newId,
+        referenceId: newId
+      });
+    }
 
     // Notify hospital if assigned
     if (data.recommendedHospitalId) {
       notificationService.addNotification({
-        title: 'Incoming Emergency',
-        message: `Emergency ${newId} assigned to your hospital. Ambulance ${data.assignedAmbulanceId || 'TBD'} incoming.`,
+        title: 'Incoming Emergency Assigned',
+        message: `Emergency ${newId} (${newEmergency.type} · ${newEmergency.severity}) assigned to your hospital. Unit ${data.assignedAmbulanceId || 'TBD'} from ${newEmergency.pickupLocation}.`,
         type: 'warning',
         targetRole: 'HOSPITAL',
-        emergencyId: newId
+        targetHospitalId: newEmergency.recommendedHospitalId || undefined,
+        emergencyId: newId,
+        referenceId: newId
       });
     }
 
@@ -145,7 +154,7 @@ export const emergencyService = {
 
   updateEmergency: (id: string, updates: Partial<Emergency>): Emergency | null => {
     const emergencies = emergencyService.getEmergencies();
-    const index = emergencies.findIndex(e => e.emergencyId === id);
+    const index = emergencies.findIndex(e => e.emergencyId === id || e.id === id);
     if (index === -1) return null;
 
     emergencies[index] = { 
@@ -160,7 +169,7 @@ export const emergencyService = {
 
   updateEmergencyStatus: (id: string, status: EmergencyStatus, updatedBy: string = 'System'): Emergency | null => {
     const emergencies = emergencyService.getEmergencies();
-    const index = emergencies.findIndex(e => e.emergencyId === id);
+    const index = emergencies.findIndex(e => e.emergencyId === id || e.id === id);
     if (index === -1) return null;
 
     const existing = emergencies[index];
@@ -177,9 +186,8 @@ export const emergencyService = {
       statusHistory: [...currentHistory, historyEntry],
     };
     if (status === 'COMPLETED' || status === 'CANCELLED') {
-      // A completed/cancelled emergency shouldn't still show an ambulance
-      // tied up on it, even before releaseAmbulance's own write below lands.
       updates.assignedAmbulanceId = null;
+      updates.ambulanceId = null;
     }
 
     const emergency = emergencyService.updateEmergency(id, updates);
@@ -188,19 +196,32 @@ export const emergencyService = {
 
     // Handle lifecycle side effects
     if (status === 'ARRIVED_AT_HOSPITAL') {
-      // If hospital accepted earlier, admit patient now
       if (emergency.recommendedHospitalId && emergency.hospitalResponse === 'ACCEPTED') {
         hospitalService.admitPatient(emergency.recommendedHospitalId, emergency.type, emergency.severity);
       }
       if (emergency.assignedAmbulanceId) {
         ambulanceService.updateAmbulanceStatus(emergency.assignedAmbulanceId, 'AT HOSPITAL');
       }
+      notificationService.addNotification({
+        title: 'Ambulance Arrived at Hospital',
+        message: `${emergency.assignedAmbulanceId || 'Ambulance'} arrived at hospital for Emergency ${id}.`,
+        type: 'info',
+        emergencyId: id,
+        referenceId: id,
+        targetRole: 'HOSPITAL'
+      });
+      notificationService.addNotification({
+        title: 'Patient Arrived at Hospital',
+        message: `Unit ${emergency.assignedAmbulanceId || 'unit'} has arrived at hospital for ${id}.`,
+        type: 'info',
+        emergencyId: id,
+        referenceId: id,
+        targetRole: 'DISPATCHER'
+      });
     } else if (status === 'COMPLETED' || status === 'CANCELLED') {
-      // Release ambulance
       if (existing.assignedAmbulanceId) {
         ambulanceService.releaseAmbulance(existing.assignedAmbulanceId);
       }
-      // Release hospital capacity if was accepted
       if (emergency.recommendedHospitalId && emergency.hospitalResponse === 'ACCEPTED') {
         const wasAdmitted = currentHistory.some(h => h.status === 'ARRIVED_AT_HOSPITAL');
         hospitalService.releaseCapacity(emergency.recommendedHospitalId, emergency.type, emergency.severity, wasAdmitted);
@@ -212,12 +233,24 @@ export const emergencyService = {
           message: `Emergency ${id} completed. Unit is now available.`,
           type: 'success',
           emergencyId: id,
+          referenceId: id,
           targetRole: 'DISPATCHER'
         });
       }
     } else if (['EN_ROUTE_TO_PATIENT', 'ARRIVED_AT_SCENE', 'PATIENT_PICKED_UP', 'EN_ROUTE_TO_HOSPITAL'].includes(status)) {
       if (emergency.assignedAmbulanceId) {
         ambulanceService.updateAmbulanceStatus(emergency.assignedAmbulanceId, 'EN ROUTE');
+      }
+      if (status === 'EN_ROUTE_TO_HOSPITAL' && emergency.recommendedHospitalId) {
+        notificationService.addNotification({
+          title: 'Inbound Ambulance En Route',
+          message: `${emergency.assignedAmbulanceId || 'Ambulance'} is en route to your facility with patient (${emergency.type} · ${emergency.severity}).`,
+          type: 'warning',
+          emergencyId: id,
+          referenceId: id,
+          targetRole: 'HOSPITAL',
+          targetHospitalId: emergency.recommendedHospitalId
+        });
       }
     }
 

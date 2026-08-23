@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { useSharedDataSync } from '../hooks/useSharedDataSync';
 import { notificationService } from '../services/notificationService';
@@ -12,6 +13,7 @@ const TYPE_STYLES = {
 
 export default function Notifications() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [filter, setFilter] = useState<'all' | 'warning' | 'info' | 'success' | 'error'>('all');
 
   const { notifications: allNotifications } = useSharedDataSync();
@@ -38,6 +40,19 @@ export default function Notifications() {
   const handleMarkAllRead = () => {
     notifs.forEach(n => notificationService.markAsRead(n.id));
     window.dispatchEvent(new Event('local-storage-update'));
+  };
+
+  const handleNotificationClick = (n: typeof notifs[0]) => {
+    handleMarkRead(n.id);
+    if (n.emergencyId) {
+      if (user?.role === 'AMBULANCE_CREW') {
+        navigate('/ambulance/emergency');
+      } else if (user?.role === 'HOSPITAL_STAFF') {
+        navigate('/hospital/incoming');
+      } else if (user?.role === 'DISPATCHER') {
+        navigate('/dispatcher/emergencies');
+      }
+    }
   };
 
   return (
@@ -74,7 +89,7 @@ export default function Notifications() {
           return (
             <div
               key={n.id}
-              onClick={() => handleMarkRead(n.id)}
+              onClick={() => handleNotificationClick(n)}
               className={`cursor-pointer border-l-4 ${s.border} ${s.bg} rounded-2xl border border-white/5 p-4 transition-opacity ${n.read ? 'opacity-60' : ''}`}
             >
               <div className="flex items-start justify-between gap-4">

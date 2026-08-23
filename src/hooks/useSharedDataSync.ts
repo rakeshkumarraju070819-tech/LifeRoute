@@ -51,17 +51,20 @@ export function useSharedDataSync() {
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('local-storage-update', handleStorageChange);
 
-    // On mount, pull the latest snapshot of each collection from the backend
-    // in case another device/role changed it while this tab was closed.
+    // On mount, pull latest snapshot from backend if available and non-empty
     (async () => {
+      let hasUpdates = false;
       for (const key of Object.values(STORAGE_KEYS)) {
         if (!realtimeSyncService.isSyncable(key)) continue;
         const remoteValue = await realtimeSyncService.pull(key);
-        if (remoteValue) {
+        if (remoteValue && Array.isArray(remoteValue) && remoteValue.length > 0) {
           localStorage.setItem(key, JSON.stringify(remoteValue));
+          hasUpdates = true;
         }
       }
-      refreshData();
+      if (hasUpdates) {
+        refreshData();
+      }
     })();
 
     // Live push updates from other connected clients (other devices, other

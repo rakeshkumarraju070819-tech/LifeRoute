@@ -24,7 +24,7 @@ export async function getSharedState(key) {
   } catch (error) {
     console.error(`shared_state read failed for ${key}, falling back to memory:`, error.message);
   }
-  return memoryStore.get(key) || { value: [], updatedAt: null };
+  return memoryStore.get(key) || { value: null, updatedAt: null };
 }
 
 export async function setSharedState(key, value) {

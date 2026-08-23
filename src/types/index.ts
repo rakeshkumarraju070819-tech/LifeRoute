@@ -66,13 +66,16 @@ export interface StatusHistoryEntry {
 
 export interface Emergency {
   emergencyId: string;
+  id?: string;
   type: string;
   severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   pickupLocation: string;
   latitude: number;
   longitude: number;
   assignedAmbulanceId: string | null;
+  ambulanceId?: string | null;
   recommendedHospitalId: string | null;
+  hospitalId?: string | null;
   status: EmergencyStatus;
   eta: string;
   notes: string;
@@ -92,7 +95,10 @@ export interface Notification {
   timestamp: string;
   type: 'info' | 'warning' | 'success' | 'error';
   emergencyId?: string;
+  referenceId?: string;
   targetRole?: 'DISPATCHER' | 'CREW' | 'HOSPITAL';
+  targetAmbulanceId?: string;
+  targetHospitalId?: string;
   targetUserId?: string;
   read: boolean;
 }

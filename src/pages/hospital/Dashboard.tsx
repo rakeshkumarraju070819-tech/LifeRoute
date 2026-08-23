@@ -39,7 +39,7 @@ export default function HospitalDashboard() {
 
   // Show any emergency assigned to this hospital that isn't completed/cancelled
   const incomingEmergencies = emergencies.filter(e =>
-    e.recommendedHospitalId === myHospitalId &&
+    (e.recommendedHospitalId === myHospitalId || e.hospitalId === myHospitalId) &&
     e.status !== 'COMPLETED' &&
     e.status !== 'CANCELLED'
   );

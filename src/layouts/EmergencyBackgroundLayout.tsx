@@ -1,5 +1,6 @@
 import { Outlet } from "react-router";
 import { useEffect, useState } from "react";
+import ambulanceImage from "../assets/ambulance.png";
 
 export default function EmergencyBackgroundLayout() {
   const [loaded, setLoaded] = useState(false);
@@ -45,7 +46,7 @@ export default function EmergencyBackgroundLayout() {
         `}
       >
         <img
-          src="/images/ambulance-hero.jpg"
+          src={ambulanceImage}
           alt="Emergency ambulance with flashing lights at night"
           className="absolute inset-0 w-full h-full object-cover"
           style={{ objectPosition: "75% center" }}
