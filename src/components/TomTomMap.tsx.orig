@@ -3,21 +3,7 @@ import { TomTomConfig } from '@tomtom-org/maps-sdk/core';
 import { TomTomMap as TTMap } from '@tomtom-org/maps-sdk/map';
 import type { FeatureCollection, Point, LineString } from 'geojson';
 import type { GeoJSONSource } from 'maplibre-gl';
-import { setWorkerUrl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-// Vite's `?worker&url` query resolves to the built worker chunk's URL as a
-// plain string at build time.
-import mapLibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-
-// maplibre-gl v6 is ESM-only and ships its worker as a separate file
-// (maplibre-gl-worker.mjs) that inside a bundler needs one explicit
-// setWorkerUrl() call — import.meta.url doesn't reliably resolve to it.
-// v5's dedicated CSP bundle (maplibre-gl-csp-worker.js) no longer exists in
-// v6 at all; pointing at it produces exactly the "timed out waiting for the
-// worker" failure this map was hitting. `?worker&url` (not plain `?url`) is
-// required too — the worker imports a sibling maplibre-gl-shared.mjs, and
-// `?url` alone emits the file without that sibling bundled in.
-setWorkerUrl(mapLibreWorkerUrl);
 
 // Mock data — same entities the old MapPlaceholder rendered as SVG, now as
 // real coordinates. Swap for live data from the backend (see
@@ -110,8 +96,15 @@ export default function TomTomMap({ height = 'h-80', showFilters = false, varian
   async function fetchTomTomConfig(retries = 3, delayMs = 400): Promise<{ configured: boolean; apiKey?: string }> {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const response = await fetch('/api/tomtom/config');
-        if (response.ok) return (await response.json()) as { configured: boolean; apiKey?: string };
+        // cache: 'no-store' prevents the browser returning a 304 with an
+        // empty body — we always need the JSON payload containing the API key.
+        const response = await fetch('/api/tomtom/config', { cache: 'no-store' });
+        if (response.ok) {
+          const text = await response.text();
+          // Guard against an empty body (e.g. a misconfigured proxy 304)
+          if (!text) throw new Error('/api/tomtom/config returned an empty body');
+          return JSON.parse(text) as { configured: boolean; apiKey?: string };
+        }
         throw new Error(`/api/tomtom/config responded ${response.status}`);
       } catch (err) {
         if (attempt === retries) throw err;

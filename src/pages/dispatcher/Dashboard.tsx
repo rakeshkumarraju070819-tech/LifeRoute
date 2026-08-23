@@ -1,6 +1,7 @@
 // Dispatcher Dashboard - cleaned version with shared data sync
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { Siren, Truck, Radio, Building2, Zap } from 'lucide-react';
 import KPICard from '../../components/KPICard';
 import StatusBadge from '../../components/StatusBadge';
 import TomTomMap from '../../components/TomTomMap';
@@ -68,15 +69,23 @@ export default function DispatcherDashboard() {
     if (!formLocation) return alert('Please specify a pickup location.');
     try {
       setCreateLoading(true);
-      const emergency = await emergencyService.createEmergency({
+      // Recommend a hospital before creating so it's set from the start,
+      // rather than always landing as null on newly created emergencies.
+      const recommendedHospitalId = emergencyService.getRecommendedHospital(
+        { severity: formSeverity } as any,
+        hospitals
+      );
+      // createEmergency/assignAmbulance are synchronous — no await needed.
+      const emergency = emergencyService.createEmergency({
         type: formType,
         severity: formSeverity,
         pickupLocation: formLocation,
         assignedAmbulanceId: formAmbulanceId || null,
+        recommendedHospitalId,
         notes: formNotes,
       });
       if (formAmbulanceId) {
-        await ambulanceService.assignAmbulance(formAmbulanceId, emergency.emergencyId);
+        ambulanceService.assignAmbulance(formAmbulanceId, emergency.emergencyId);
       }
       setShowCreate(false);
       // reset form
@@ -104,11 +113,11 @@ export default function DispatcherDashboard() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-6">
-        <KPICard label="Active Emergencies" value={activeEmergenciesCount.toString()} accent="emergency" icon="🚨" />
-        <KPICard label="Available Ambulances" value={availableAmbulancesCount.toString()} accent="available" icon="🚑" />
-        <KPICard label="Active Ambulances" value={activeAmbulancesCount.toString()} accent="active" icon="📡" />
-        <KPICard label="Hospitals Available" value={hospitalsAvailableCount.toString()} accent="available" icon="🏥" />
-        <KPICard label="Critical Emergencies" value={criticalEmergenciesCount.toString()} accent="emergency" icon="⚡" />
+        <KPICard label="Active Emergencies" value={activeEmergenciesCount.toString()} accent="critical" icon={Siren} />
+        <KPICard label="Available Ambulances" value={availableAmbulancesCount.toString()} accent="positive" icon={Truck} />
+        <KPICard label="Active Ambulances" value={activeAmbulancesCount.toString()} accent="operational" icon={Radio} />
+        <KPICard label="Hospitals Available" value={hospitalsAvailableCount.toString()} accent="positive" icon={Building2} />
+        <KPICard label="Critical Emergencies" value={criticalEmergenciesCount.toString()} accent="critical" icon={Zap} />
       </div>
 
       {/* Tab bar */}

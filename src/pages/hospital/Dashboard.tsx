@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
+import { BedDouble, Building2, Truck, Zap } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import type { Hospital } from '../../types';
 import StatusBadge from '../../components/StatusBadge';
@@ -8,6 +9,9 @@ import { useSharedDataSync } from '../../hooks/useSharedDataSync';
 import { hospitalService } from '../../services/hospitalService';
 import { emergencyService } from '../../services/emergencyService';
 
+// Display-only status for capacity bars (bed availability bucketed into
+// three bands) — distinct from Hospital['emergencyDepartmentStatus'], which
+// is the actual ED status field staff set directly.
 type CapacityStatus = 'AVAILABLE' | 'LIMITED' | 'FULL';
 
 export default function HospitalDashboard() {
@@ -25,7 +29,10 @@ export default function HospitalDashboard() {
 
   const [hospitalStatus, setHospitalStatus] = useState<string>('AVAILABLE');
 
-  // Keep local status in sync when shared data updates (e.g. after reset)
+  // myHospital comes from useSharedDataSync and can still be undefined on
+  // first render (data loads async) — deriving the initial useState value
+  // from it silently missed the real status once data arrived. Keep it in
+  // sync explicitly instead.
   useEffect(() => {
     if (myHospital) setHospitalStatus(myHospital.emergencyDepartmentStatus);
   }, [myHospital?.emergencyDepartmentStatus]);
@@ -111,10 +118,10 @@ export default function HospitalDashboard() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-        <KPICard label="General Beds Available" value={`${capacity['General Beds'].avail}/${capacity['General Beds'].total}`} accent="available" icon="🛏" />
-        <KPICard label="ICU Beds Available" value={`${capacity['ICU Beds'].avail}/${capacity['ICU Beds'].total}`} accent="available" icon="🏥" />
-        <KPICard label="Incoming Ambulances" value={incomingEmergencies.length.toString()} accent="warning" icon="🚑" />
-        <KPICard label="Critical Incoming" value={incomingEmergencies.filter(i => i.severity === 'CRITICAL').length.toString()} accent="emergency" icon="⚡" />
+        <KPICard label="General Beds Available" value={`${capacity['General Beds'].avail}/${capacity['General Beds'].total}`} accent="positive" icon={BedDouble} />
+        <KPICard label="ICU Beds Available" value={`${capacity['ICU Beds'].avail}/${capacity['ICU Beds'].total}`} accent="positive" icon={Building2} />
+        <KPICard label="Incoming Ambulances" value={incomingEmergencies.length.toString()} accent="warning" icon={Truck} />
+        <KPICard label="Critical Incoming" value={incomingEmergencies.filter(i => i.severity === 'CRITICAL').length.toString()} accent="critical" icon={Zap} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

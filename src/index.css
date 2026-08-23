@@ -1,45 +1,73 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import 'tailwindcss';
 
+/*
+ * Design tokens — Emergency Response Intelligence System
+ *
+ * Signature direction: a clinical dispatch tool, not a generic dark SaaS
+ * admin panel. Near-black/near-white surfaces (not navy or cream), a single
+ * clinical-red accent reserved for CRITICAL states only, and a muted medical
+ * teal as the everyday operational accent. All data — IDs, timestamps, ETAs,
+ * vitals — renders in JetBrains Mono; UI chrome uses Inter.
+ *
+ * Both themes share these tokens. Dark is the default (operations-room
+ * context); light is for daytime desk use. Toggle by setting
+ * data-theme="light" on <html> — see ThemeContext.
+ */
 @theme {
-  --color-navy-950: #03071e;
-  --color-navy-900: #0a0f2e;
-  --color-navy-800: #0f172a;
-  --color-navy-700: #1e2d4a;
-  --color-navy-600: #1e3a5f;
-  --color-navy-500: #1d4ed8;
-  --color-slate-50: #f8fafc;
-  --color-slate-100: #f1f5f9;
-  --color-slate-200: #e2e8f0;
-  --color-slate-400: #94a3b8;
-  --color-slate-500: #64748b;
-  --color-slate-600: #475569;
-  --color-slate-700: #334155;
-  --color-emergency: #dc2626;
-  --color-emergency-light: #fef2f2;
-  --color-active: #2563eb;
-  --color-active-light: #eff6ff;
-  --color-available: #16a34a;
-  --color-available-light: #f0fdf4;
-  --color-warning: #d97706;
-  --color-warning-light: #fffbeb;
-  --color-brand-pink: #ff6b9d;
-  --color-brand-purple: #7c3aed;
-  --color-brand-purple-light: #a855f7;
-  --color-surface: #0a0f2e;
-  --color-surface-card: #12183d;
-  --color-surface-elevated: #1a2252;
-  --color-border-subtle: rgba(255, 255, 255, 0.08);
   --font-sans: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Static brand accents — same value in both themes */
+  --color-critical: #e5484d;
+  --color-critical-strong: #c53238;
+  --color-warning: #d99a3d;
+  --color-operational: #4a9b8e;
+  --color-operational-strong: #357c71;
+  --color-positive: #3ba676;
+}
+
+:root,
+[data-theme='dark'] {
+  --color-surface-base: #0a0b0e;
+  --color-surface-panel: #131519;
+  --color-surface-panel-raised: #1a1d23;
+  --color-surface-sunken: #07080a;
+  --color-border-hairline: rgba(255, 255, 255, 0.08);
+  --color-border-hairline-strong: rgba(255, 255, 255, 0.14);
+  --color-text-primary: #eceef1;
+  --color-text-secondary: #9aa1ad;
+  --color-text-tertiary: #676e7a;
+  --color-critical-bg: rgba(229, 72, 77, 0.12);
+  --color-warning-bg: rgba(217, 154, 61, 0.12);
+  --color-operational-bg: rgba(74, 155, 142, 0.14);
+  --color-positive-bg: rgba(59, 166, 118, 0.12);
+}
+
+[data-theme='light'] {
+  --color-surface-base: #f6f6f4;
+  --color-surface-panel: #ffffff;
+  --color-surface-panel-raised: #ffffff;
+  --color-surface-sunken: #ececea;
+  --color-border-hairline: rgba(15, 15, 15, 0.09);
+  --color-border-hairline-strong: rgba(15, 15, 15, 0.16);
+  --color-text-primary: #16181c;
+  --color-text-secondary: #5c6270;
+  --color-text-tertiary: #8b919c;
+  --color-critical-bg: rgba(229, 72, 77, 0.09);
+  --color-warning-bg: rgba(217, 154, 61, 0.1);
+  --color-operational-bg: rgba(74, 155, 142, 0.1);
+  --color-positive-bg: rgba(59, 166, 118, 0.09);
 }
 
 * {
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
   padding: 0;
@@ -47,18 +75,57 @@ html, body, #root {
 
 body {
   font-family: var(--font-sans);
-  background-color: #0a0f2e;
-  color: #e2e8f0;
+  background-color: var(--color-surface-base);
+  color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--color-border-hairline-strong);
   border-radius: 3px;
 }
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+}
+
+/* Utility layer — token-backed classes used across every page instead of
+   hardcoded hex values, so both themes stay correct automatically. */
+@layer utilities {
+  .bg-surface-base { background-color: var(--color-surface-base); }
+  .bg-surface-panel { background-color: var(--color-surface-panel); }
+  .bg-surface-panel-raised { background-color: var(--color-surface-panel-raised); }
+  .bg-surface-sunken { background-color: var(--color-surface-sunken); }
+  .border-hairline { border-color: var(--color-border-hairline); }
+  .border-hairline-strong { border-color: var(--color-border-hairline-strong); }
+  .text-primary { color: var(--color-text-primary); }
+  .text-secondary { color: var(--color-text-secondary); }
+  .text-tertiary { color: var(--color-text-tertiary); }
+
+  .text-critical { color: var(--color-critical); }
+  .bg-critical { background-color: var(--color-critical); }
+  .bg-critical-bg { background-color: var(--color-critical-bg); }
+  .border-critical { border-color: var(--color-critical); }
+
+  .text-warning { color: var(--color-warning); }
+  .bg-warning { background-color: var(--color-warning); }
+  .bg-warning-bg { background-color: var(--color-warning-bg); }
+  .border-warning { border-color: var(--color-warning); }
+
+  .text-operational { color: var(--color-operational); }
+  .bg-operational { background-color: var(--color-operational); }
+  .bg-operational-bg { background-color: var(--color-operational-bg); }
+  .border-operational { border-color: var(--color-operational); }
+
+  .text-positive { color: var(--color-positive); }
+  .bg-positive { background-color: var(--color-positive); }
+  .bg-positive-bg { background-color: var(--color-positive-bg); }
+  .border-positive { border-color: var(--color-positive); }
+}

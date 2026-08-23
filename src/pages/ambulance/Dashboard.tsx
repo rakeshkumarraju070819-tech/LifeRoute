@@ -8,7 +8,7 @@ import { ambulanceService } from '../../services/ambulanceService';
 import { emergencyService } from '../../services/emergencyService';
 import { EmergencyStatus } from '../../types';
 
-const STATUSES = ['AVAILABLE', 'DISPATCHED', 'EN ROUTE TO PATIENT', 'PATIENT PICKED UP', 'EN ROUTE TO HOSPITAL', 'ARRIVED'];
+const STATUSES: import('../../types').AmbulanceStatus[] = ['AVAILABLE', 'ASSIGNED', 'ACCEPTED', 'EN ROUTE', 'AT HOSPITAL', 'OFF DUTY'];
 
 const HOSPITAL_OPTIONS = [
   { id: 'H1', name: 'City General Hospital', status: 'OPEN', location: { lat: 40.7135, lng: -74.002 }, emergencyDepartment: { status: 'AVAILABLE' }, icu: { available: 12, total: 20 }, cardiac: { status: 'AVAILABLE' }, trauma: { status: 'AVAILABLE' } },
@@ -29,7 +29,9 @@ export default function AmbulanceDashboard() {
   // Data Layer — single unified hook handles all portals + cross-tab
   const { ambulances, emergencies, hospitals } = useSharedDataSync();
 
-  const myAmbulanceId = user?.ambulanceId || 'AMB-017';
+  // 'AMB-017' doesn't exist in seed data (AMB-001..004 do) — that fallback
+  // silently broke myAmbulance lookups for any user without an explicit id.
+  const myAmbulanceId = user?.ambulanceId || 'AMB-001';
   const myAmbulance = ambulances.find(a => a.ambulanceId === myAmbulanceId);
   const myEmergency = myAmbulance?.assignedEmergencyId ? emergencies.find(e => e.emergencyId === myAmbulance?.assignedEmergencyId && e.status !== 'COMPLETED') : null;
   const recommendedHospital = myEmergency?.recommendedHospitalId ? hospitals.find(h => h.hospitalId === myEmergency.recommendedHospitalId) : null;
@@ -68,10 +70,13 @@ export default function AmbulanceDashboard() {
     if (myEmergency) {
       emergencyService.updateEmergencyStatus(myEmergency.emergencyId, newStatus);
 
-      // Sync ambulance status loosely with emergency status
+      // Sync ambulance status to match emergency status transitions
       if (newStatus === 'COMPLETED') {
-        ambulanceService.updateAmbulanceStatus(myAmbulanceId, 'AVAILABLE');
-        ambulanceService.updateAmbulance(myAmbulanceId, { assignedEmergencyId: null });
+        ambulanceService.updateAmbulance(myAmbulanceId, { status: 'AVAILABLE', assignedEmergencyId: null });
+      } else if (newStatus === 'ACCEPTED') {
+        ambulanceService.updateAmbulanceStatus(myAmbulanceId, 'ACCEPTED');
+      } else if (newStatus === 'ARRIVED AT HOSPITAL') {
+        ambulanceService.updateAmbulanceStatus(myAmbulanceId, 'AT HOSPITAL');
       } else {
         ambulanceService.updateAmbulanceStatus(myAmbulanceId, 'EN ROUTE');
       }

@@ -1,0 +1,33 @@
+--- src/components/TomTomMap.tsx
++++ src/components/TomTomMap.tsx
+@@ -104,8 +112,15 @@
+   async function fetchTomTomConfig(retries = 3, delayMs = 400): Promise<{ configured: boolean; apiKey?: string }> {
+     for (let attempt = 0; attempt <= retries; attempt++) {
+       try {
+-        const response = await fetch('/api/tomtom/config');
+-        if (response.ok) return (await response.json()) as { configured: boolean; apiKey?: string };
++        // cache: 'no-store' prevents the browser returning a 304 with an
++        // empty body — we always need the JSON payload containing the API key.
++        const response = await fetch('/api/tomtom/config', { cache: 'no-store' });
++        if (response.ok) {
++          const text = await response.text();
++          // Guard against an empty body (e.g. a misconfigured proxy 304)
++          if (!text) throw new Error('/api/tomtom/config returned an empty body');
++          return JSON.parse(text) as { configured: boolean; apiKey?: string };
++        }
+         throw new Error(`/api/tomtom/config responded ${response.status}`);
+       } catch (err) {
+         if (attempt === retries) throw err;
+@@ -289,7 +317,11 @@
+       (emergenciesSrc as GeoJSONSource).setData(filters.emergencies ? EMERGENCIES_FC : empty);
+   }, [filters, status]);
+ 
+-  const heightStyle = height === 'h-80' ? '320px' : height;
++  // If height looks like a CSS value (contains 'px', '%', 'vh', etc.) use it directly;
++  // otherwise treat it as a Tailwind shorthand and convert the common cases.
++  const heightStyle = /^\d/.test(height) || height.includes('px') || height.includes('%') || height.includes('vh')
++    ? height
++    : height === 'h-80' ? '320px' : height === 'h-96' ? '384px' : '320px';
+ 
+   if (status === 'missing-key') {
+     return (

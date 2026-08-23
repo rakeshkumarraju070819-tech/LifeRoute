@@ -1,5 +1,6 @@
 import { Ambulance, Hospital, Emergency, Notification } from '../types';
 import { STORAGE_KEYS } from './constants';
+import { storageService } from '../services/storageService';
 
 export const SEED_AMBULANCES: Ambulance[] = [
   {
@@ -123,11 +124,11 @@ export const initializeSeedData = (force = false) => {
   const hasEmergencies = localStorage.getItem(STORAGE_KEYS.EMERGENCIES);
   
   if (force || !hasEmergencies) {
-    localStorage.setItem(STORAGE_KEYS.EMERGENCIES, JSON.stringify(SEED_EMERGENCIES));
-    localStorage.setItem(STORAGE_KEYS.AMBULANCES, JSON.stringify(SEED_AMBULANCES));
-    localStorage.setItem(STORAGE_KEYS.HOSPITALS, JSON.stringify(SEED_HOSPITALS));
-    localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(SEED_NOTIFICATIONS));
-    // Trigger custom event for same-tab sync
-    window.dispatchEvent(new Event('local-storage-update'));
+    // Use storageService so the 'local-storage-update' event fires after each
+    // write and the useSharedDataSync hook re-fetches automatically.
+    storageService.setItem(STORAGE_KEYS.EMERGENCIES, SEED_EMERGENCIES);
+    storageService.setItem(STORAGE_KEYS.AMBULANCES, SEED_AMBULANCES);
+    storageService.setItem(STORAGE_KEYS.HOSPITALS, SEED_HOSPITALS);
+    storageService.setItem(STORAGE_KEYS.NOTIFICATIONS, SEED_NOTIFICATIONS);
   }
 };
