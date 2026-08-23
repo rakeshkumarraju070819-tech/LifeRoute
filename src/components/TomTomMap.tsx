@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { TomTomConfig } from '@tomtom-org/maps-sdk/core';
 import { TomTomMap as TTMap } from '@tomtom-org/maps-sdk/map';
-import type { FeatureCollection, Point, LineString } from 'geojson';
+import type { FeatureCollection, LineString } from 'geojson';
 import type { GeoJSONSource } from 'maplibre-gl';
 import { Marker, setWorkerUrl } from 'maplibre-gl';
 import { bezierSpline, distance as turfDistance, lineString } from '@turf/turf';
@@ -58,27 +58,6 @@ const AMBULANCE_COLOR: Record<AmbulanceStatus, string> = {
   dispatched: '#f59e0b', // amber-500
 };
 
-function pointFC<T extends { lng: number; lat: number }>(
-  items: T[],
-  props: (item: T) => Record<string, unknown>,
-): FeatureCollection<Point> {
-  return {
-    type: 'FeatureCollection',
-    features: items.map(item => ({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: [item.lng, item.lat] },
-      properties: props(item),
-    })),
-  };
-}
-
-const HOSPITALS_FC = pointFC(HOSPITALS, h => ({ label: h.label }));
-const EMERGENCIES_FC = pointFC(EMERGENCIES, e => ({ severity: e.severity }));
-
-function ambulancesFC(visible: Ambulance[]) {
-  return pointFC(visible, a => ({ label: a.label, status: a.status, color: AMBULANCE_COLOR[a.status] }));
-}
-
 // A TomTom-hosted standard style ID — see @tomtom-org/maps-sdk/map's
 // `standardStyleIDs`. We only ever use these three: the light/dark pair
 // (theme-driven) and satellite (the "Satellite" toggle).
@@ -132,7 +111,20 @@ function buildRouteLine(from: [number, number], to: [number, number]): FeatureCo
   }
 }
 
-function createPinElement(kind: 'incident' | 'hospital' | 'ambulance'): HTMLDivElement {
+const AMBULANCE_SVG =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l1.5-3h3L13 12h5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="16" r="1.6" fill="#fff"/><circle cx="17" cy="16" r="1.6" fill="#fff"/><path d="M3 12v3h1M20 12l-2-4h-4v4h6z" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const INCIDENT_SVG =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2 2 20h20L12 2z" fill="#fff"/><rect x="11" y="9" width="2" height="6" fill="var(--color-critical)"/><rect x="11" y="16" width="2" height="2" fill="var(--color-critical)"/></svg>';
+
+/**
+ * A round icon-badge marker element — a hospital "H", an ambulance glyph, or a
+ * warning-triangle for an incident/emergency — used in place of a plain
+ * color dot so ambulance / hospital / emergency pins are distinguishable by
+ * shape+icon, not just by color, on both the crew and dispatcher map variants.
+ * `background` lets callers color-code within a kind (e.g. an ambulance's
+ * live status, or an emergency's severity) while keeping the icon fixed.
+ */
+function createPinElement(kind: 'incident' | 'hospital' | 'ambulance', background?: string): HTMLDivElement {
   const el = document.createElement('div');
   el.style.display = 'flex';
   el.style.alignItems = 'center';
@@ -144,16 +136,14 @@ function createPinElement(kind: 'incident' | 'hospital' | 'ambulance'): HTMLDivE
   el.style.border = '2px solid #fff';
 
   if (kind === 'incident') {
-    el.style.background = 'var(--color-critical)';
-    el.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2 2 20h20L12 2z" fill="#fff"/><rect x="11" y="9" width="2" height="6" fill="var(--color-critical)"/><rect x="11" y="16" width="2" height="2" fill="var(--color-critical)"/></svg>';
+    el.style.background = background ?? 'var(--color-critical)';
+    el.innerHTML = INCIDENT_SVG;
   } else if (kind === 'hospital') {
-    el.style.background = 'var(--color-positive)';
+    el.style.background = background ?? 'var(--color-positive)';
     el.innerHTML = '<span style="color:#fff;font-weight:800;font-size:14px;font-family:var(--font-sans)">H</span>';
   } else {
-    el.style.background = 'var(--color-operational)';
-    el.innerHTML =
-      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l1.5-3h3L13 12h5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="16" r="1.6" fill="#fff"/><circle cx="17" cy="16" r="1.6" fill="#fff"/><path d="M3 12v3h1M20 12l-2-4h-4v4h6z" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    el.style.background = background ?? 'var(--color-operational)';
+    el.innerHTML = AMBULANCE_SVG;
   }
   return el;
 }
@@ -185,8 +175,22 @@ export default function TomTomMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<InstanceType<typeof TTMap> | null>(null);
   const markersRef = useRef<Marker[]>([]);
+  // Dispatcher variant's icon markers, grouped by filter key (each hospital /
+  // ambulance / emergency renders as a Marker now instead of a GL circle-layer
+  // feature, so filter toggling hides/shows marker elements directly — see
+  // the filter effect below — rather than swapping a GeoJSON source's data).
+  const dispatcherMarkersRef = useRef<Record<'hospitals' | 'ambulances' | 'emergencies', Marker[]>>({
+    hospitals: [],
+    ambulances: [],
+    emergencies: [],
+  });
   const { theme } = useTheme();
   const [filters, setFilters] = useState({ ambulances: true, emergencies: true, hospitals: true, traffic: true });
+  // Mirrors `filters` for sync reads inside the map-init effect (which only
+  // re-runs on variant/crewFocus change, not on every filter toggle) — see
+  // its use when first laying down dispatcher markers, below.
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
   const [mapMode, setMapMode] = useState<'map' | 'satellite'>('map');
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing-key' | 'error'>('loading');
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
@@ -309,49 +313,45 @@ export default function TomTomMap({
             ];
             gl.fitBounds(bounds, { padding: 60, duration: 0 });
           } else {
-            // Dispatcher fleet-wide overview (mock data — see header comment)
-            gl.addSource('hospitals', { type: 'geojson', data: HOSPITALS_FC });
-            gl.addLayer({
-              id: 'hospitals-dot',
-              type: 'circle',
-              source: 'hospitals',
-              paint: { 'circle-radius': 9, 'circle-color': '#ef4444', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' },
-            });
-            gl.addLayer({
-              id: 'hospitals-label',
-              type: 'symbol',
-              source: 'hospitals',
-              layout: { 'text-field': ['get', 'label'], 'text-offset': [0, 1.4], 'text-anchor': 'top', 'text-size': 11, 'text-optional': true },
-              paint: { 'text-color': '#fecaca', 'text-halo-color': '#0d1530', 'text-halo-width': 1.2 },
-            });
+            // Dispatcher fleet-wide overview (mock data — see header comment).
+            // Icon markers (hospital "H" / ambulance glyph / warning triangle)
+            // instead of plain color-coded circle-layer dots, so the three
+            // kinds read apart by shape at a glance, not just by color.
+            const dispatcherMarkers: Record<'hospitals' | 'ambulances' | 'emergencies', Marker[]> = {
+              hospitals: [],
+              ambulances: [],
+              emergencies: [],
+            };
 
-            gl.addSource('ambulances', { type: 'geojson', data: ambulancesFC(AMBULANCES) });
-            gl.addLayer({
-              id: 'ambulances-dot',
-              type: 'circle',
-              source: 'ambulances',
-              paint: { 'circle-radius': 8, 'circle-color': ['get', 'color'], 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' },
-            });
-            gl.addLayer({
-              id: 'ambulances-label',
-              type: 'symbol',
-              source: 'ambulances',
-              layout: { 'text-field': ['get', 'label'], 'text-offset': [0, 1.3], 'text-anchor': 'top', 'text-size': 10, 'text-optional': true },
-              paint: { 'text-color': '#cbd5e1', 'text-halo-color': '#0d1530', 'text-halo-width': 1.2 },
-            });
+            for (const h of HOSPITALS) {
+              const el = createPinElement('hospital');
+              const marker = new Marker({ element: el, anchor: 'bottom' }).setLngLat([h.lng, h.lat]).addTo(gl);
+              const labelEl = createLabelElement(h.label, undefined, '#22c55e');
+              const label = new Marker({ element: labelEl, anchor: 'bottom', offset: [0, -32] }).setLngLat([h.lng, h.lat]).addTo(gl);
+              dispatcherMarkers.hospitals.push(marker, label);
+            }
 
-            gl.addSource('emergencies', { type: 'geojson', data: EMERGENCIES_FC });
-            gl.addLayer({
-              id: 'emergencies-dot',
-              type: 'circle',
-              source: 'emergencies',
-              paint: {
-                'circle-radius': 10,
-                'circle-color': ['match', ['get', 'severity'], 'critical', '#ef4444', '#f59e0b'],
-                'circle-opacity': 0.85,
-                'circle-stroke-width': 2,
-                'circle-stroke-color': '#fff',
-              },
+            for (const a of AMBULANCES) {
+              const el = createPinElement('ambulance', AMBULANCE_COLOR[a.status]);
+              const marker = new Marker({ element: el, anchor: 'center' }).setLngLat([a.lng, a.lat]).addTo(gl);
+              const labelEl = createLabelElement(a.label, undefined, AMBULANCE_COLOR[a.status]);
+              const label = new Marker({ element: labelEl, anchor: 'top', offset: [0, 18] }).setLngLat([a.lng, a.lat]).addTo(gl);
+              dispatcherMarkers.ambulances.push(marker, label);
+            }
+
+            for (const e of EMERGENCIES) {
+              const color = e.severity === 'critical' ? '#ef4444' : '#f59e0b';
+              const el = createPinElement('incident', color);
+              const marker = new Marker({ element: el, anchor: 'bottom' }).setLngLat([e.lng, e.lat]).addTo(gl);
+              dispatcherMarkers.emergencies.push(marker);
+            }
+
+            dispatcherMarkersRef.current = dispatcherMarkers;
+            // Apply whatever filter state is current at init time (in case
+            // the panel was toggled before the map finished loading).
+            (Object.keys(dispatcherMarkers) as Array<keyof typeof dispatcherMarkers>).forEach(k => {
+              const visible = filtersRef.current[k];
+              dispatcherMarkers[k].forEach(m => (m.getElement().style.display = visible ? '' : 'none'));
             });
           }
 
@@ -386,6 +386,8 @@ export default function TomTomMap({
       cancelled = true;
       markersRef.current.forEach(m => m.remove());
       markersRef.current = [];
+      Object.values(dispatcherMarkersRef.current).forEach(group => group.forEach(m => m.remove()));
+      dispatcherMarkersRef.current = { hospitals: [], ambulances: [], emergencies: [] };
       mapRef.current?.mapLibreMap.remove();
       mapRef.current = null;
     };
@@ -418,23 +420,16 @@ export default function TomTomMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [crewFocus?.ambulance.lat, crewFocus?.ambulance.lng, status]);
 
-  // Dispatcher filter toggles: swap each source's data between the full set and empty
+  // Dispatcher filter toggles: show/hide each group's marker elements
+  // in place (cheaper than removing + re-adding, and avoids re-triggering
+  // the map-init effect since this doesn't touch mapRef/dispatcherMarkersRef).
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || status !== 'ready' || variant !== 'dispatcher') return;
-    const gl = map.mapLibreMap;
-    const empty: FeatureCollection<Point> = { type: 'FeatureCollection', features: [] };
-
-    const hospitalsSrc = gl.getSource('hospitals');
-    if (hospitalsSrc && 'setData' in hospitalsSrc) (hospitalsSrc as GeoJSONSource).setData(filters.hospitals ? HOSPITALS_FC : empty);
-
-    const ambulancesSrc = gl.getSource('ambulances');
-    if (ambulancesSrc && 'setData' in ambulancesSrc)
-      (ambulancesSrc as GeoJSONSource).setData(filters.ambulances ? ambulancesFC(AMBULANCES) : empty);
-
-    const emergenciesSrc = gl.getSource('emergencies');
-    if (emergenciesSrc && 'setData' in emergenciesSrc)
-      (emergenciesSrc as GeoJSONSource).setData(filters.emergencies ? EMERGENCIES_FC : empty);
+    if (!mapRef.current || status !== 'ready' || variant !== 'dispatcher') return;
+    const groups = dispatcherMarkersRef.current;
+    (Object.keys(groups) as Array<keyof typeof groups>).forEach(k => {
+      const visible = filters[k];
+      groups[k].forEach(m => (m.getElement().style.display = visible ? '' : 'none'));
+    });
   }, [filters, status, variant]);
 
   // If height looks like a CSS value (contains 'px', '%', 'vh', etc.) use it directly;
@@ -528,10 +523,12 @@ export default function TomTomMap({
           <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full" style={{ background: crewFocus.destination.kind === 'incident' ? 'var(--color-critical)' : 'var(--color-positive)' }} /><span className="text-[10px] text-secondary">{crewFocus.destination.kind === 'incident' ? 'Incident' : 'Hospital'}</span></div>
         </div>
       ) : (
-        <div className="absolute bottom-3 left-3 flex gap-3 z-10 bg-surface-panel-raised/90 backdrop-blur px-2 py-1 rounded-lg border border-hairline">
+        <div className="absolute bottom-3 left-3 flex flex-wrap gap-x-3 gap-y-1 max-w-[220px] z-10 bg-surface-panel-raised/90 backdrop-blur px-2 py-1 rounded-lg border border-hairline">
           <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-green-500" /><span className="text-[10px] text-secondary">Available</span></div>
           <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-blue-500" /><span className="text-[10px] text-secondary">En Route</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-500" /><span className="text-[10px] text-secondary">Dispatched</span></div>
           <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-[10px] text-secondary">Emergency</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500" /><span className="text-[10px] text-secondary">Hospital</span></div>
         </div>
       )}
     </div>
